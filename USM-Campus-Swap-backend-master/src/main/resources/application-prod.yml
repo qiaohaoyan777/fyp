@@ -1,0 +1,50 @@
+server:
+  port: 8081
+  # 必须开启：识别 Nginx 转发的 X-Forwarded-Proto (HTTPS)
+  forward-headers-strategy: native
+  servlet:
+    context-path: /api
+    session:
+      cookie:
+        http-only: true
+        secure: true      # HTTPS 环境下必须为 true
+        same-site: lax    # 兼容性最好的跨域设置
+        path: /           # 建议设为 /，让全站共用 Session
+
+spring:
+  datasource:
+    # 替换为你线上数据库的真实地址和密码
+    url: jdbc:mysql://127.0.0.1:3306/usmsecondhand?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Singapore&allowPublicKeyRetrieval=true&useSSL=false
+    username: root
+    password: cmt322g16
+
+  # 如果线上没有安装 Redis，请将这里设为 none
+  session:
+    store-type: none
+
+  web:
+    resources:
+      static-locations: classpath:/static/,file:${file.upload-dir}
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 50MB
+
+file:
+  upload-dir: /var/www/uploads/
+  domain: https://usm-compus-swap.duckdns.org/api
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: false
+  global-config:
+    db-config:
+      logic-delete-field: isDelete
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+logging:
+  level:
+    root: info
+    com.cmt322.usmsecondhand.mapper: warn
