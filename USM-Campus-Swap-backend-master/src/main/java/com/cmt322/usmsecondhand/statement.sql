@@ -1,3 +1,4 @@
+
 -- auto-generated definition
 create table user
 (

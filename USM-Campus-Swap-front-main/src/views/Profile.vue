@@ -55,30 +55,30 @@
           </div>
         </div>
 
-        <div class="wallet-card">
-          <div class="wallet-header">
-            <h3><el-icon><Wallet /></el-icon> Wallet Balance</h3>
-            <el-tag v-if="userInfo.emailVerified === 1" type="success" size="small">
-              USM Verified
-            </el-tag>
-            <el-tag v-else type="danger" size="small">
-              Unverified Account
-            </el-tag>
+        <div class="activity-card">
+          <div class="card-header">
+            <span class="header-title">
+              <el-icon><DataLine /></el-icon> Activity Summary
+            </span>
+            <el-tag size="small" type="success" effect="light">Active</el-tag>
           </div>
-          <div class="wallet-balance">
-            <div class="balance-amount">RM {{ (userInfo.balance || 0).toFixed(2) }}</div>
-            <div class="balance-label">Available Balance</div>
+
+          <div class="stats-grid">
+            <div class="stat-box">
+              <div class="stat-value text-blue">{{ userStats.listed }}</div>
+              <div class="stat-label">Items Listed</div>
+            </div>
+            <div class="divider"></div>
+            <div class="stat-box">
+              <div class="stat-value text-green">{{ userStats.sold }}</div>
+              <div class="stat-label">Items Sold</div>
+            </div>
           </div>
-          <div class="wallet-actions">
-            <el-button type="primary" @click="showTopUpDialog = true">
-              <el-icon><Plus /></el-icon>
-              Top Up
-            </el-button>
-            <el-button @click="$router.push('/orders')">
-              <el-icon><List /></el-icon>
-              Transaction History
-            </el-button>
-          </div>
+
+          <el-button plain class="history-btn" @click="$router.push('/orders')">
+            <el-icon><Document /></el-icon>
+            Transaction History
+          </el-button>
         </div>
 
         <div class="status-card">
@@ -245,7 +245,7 @@
                     placeholder="Enter new password"
                     show-password
                 />
-                <div class="form-tip">Password must be at least 6 characters</div>
+                <div class="form-tip">Password must be at least 8 characters</div>
               </el-form-item>
 
               <el-form-item label="Confirm Password" prop="confirmPassword">
@@ -277,84 +277,37 @@
                   </p>
                 </div>
               </div>
-
             </div>
           </div>
         </div>
       </div>
     </div>
-
-    <el-dialog
-        v-model="showTopUpDialog"
-        title="Top Up Wallet"
-        width="400px"
-    >
-      <div class="top-up-dialog">
-        <div class="amount-selection">
-          <div
-              v-for="amount in topUpAmounts"
-              :key="amount"
-              class="amount-option"
-              :class="{ active: selectedAmount === amount }"
-              @click="selectedAmount = amount"
-          >
-            RM {{ amount }}
-          </div>
-        </div>
-
-        <div class="custom-amount">
-          <el-input-number
-              v-model="customAmount"
-              :min="10"
-              :max="1000"
-              :step="10"
-              placeholder="Custom amount"
-              style="width: 100%"
-          />
-        </div>
-
-        <div class="payment-methods">
-          <h4>Payment Method</h4>
-          <el-select v-model="paymentMethod" placeholder="Select payment method" style="width: 100%">
-            <el-option label="Credit/Debit Card" value="card" />
-            <el-option label="Online Banking" value="banking" />
-            <el-option label="Touch 'n Go eWallet" value="tng" />
-            <el-option label="GrabPay" value="grabpay" />
-          </el-select>
-        </div>
-      </div>
-
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="showTopUpDialog = false">Cancel</el-button>
-          <el-button type="primary" @click="processTopUp" :loading="toppingUp">
-            Proceed to Pay RM {{ (customAmount || selectedAmount).toFixed(2) }}
-          </el-button>
-        </span>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
-  User, Lock, Setting, Camera, Calendar,
-  Wallet, Plus, List, Message, Phone,
-  Location, CreditCard, School
+  User, Lock, Camera, Calendar, List, 
+  Message, Phone, Location, CreditCard, School,
+  DataLine, Document 
 } from '@element-plus/icons-vue'
 import myAxios from "@/plugins/request.js"
 
 const router = useRouter()
 const userStore = useUserStore()
 
-// 激活的标签页
 const activeTab = ref('profile')
 
-// 用户信息
+// 🌟 新增：存放动态战绩数据的响应式对象
+const userStats = reactive({
+  listed: 0,
+  sold: 0
+})
+
 const userInfo = ref({
   id: null,
   username: '',
@@ -374,13 +327,23 @@ const userInfo = ref({
   createTime: null
 })
 
-// 加载用户数据
+// 🌟 新增：去后台拉取当前用户的商品列表并统计数量
+const loadUserStats = async () => {
+  try {
+    const res = await myAxios.get('/goods/my/list')
+    if (res && Array.isArray(res)) {
+      userStats.listed = res.length
+      // 后端状态为 2 通常代表 sold
+      userStats.sold = res.filter(item => item.status === 2).length
+    }
+  } catch (error) {
+    console.error('Failed to load user stats:', error)
+  }
+}
+
 const loadUserData = async () => {
   try {
-    // 1. res 现在直接就是后端返回的 User 对象（脱壳后）
     const res = await myAxios.get('/user/current')
-
-    // 2. 拦截器已处理 code !== 0 的情况，只需判断数据是否存在
     if (res) {
       userInfo.value = { ...userInfo.value, ...res }
       if (userStore.userInfo) {
@@ -389,12 +352,10 @@ const loadUserData = async () => {
       initForms()
     }
   } catch (error) {
-    // 3. 拦截器会自动弹出错误，此处仅需处理组件状态
     console.error('Failed to load user data:', error)
   }
 }
 
-// 个人信息表单
 const profileForm = reactive({
   username: '',
   userAccount: '',
@@ -447,7 +408,6 @@ const profileRules = {
   ],
 }
 
-// 密码表单
 const passwordForm = reactive({
   currentPassword: '',
   newPassword: '',
@@ -473,25 +433,15 @@ const passwordRules = {
   ],
   newPassword: [
     { required: true, message: 'Please enter new password', trigger: 'blur' },
-    { min: 6, message: 'Password must be at least 6 characters', trigger: 'blur' }
+    { min: 8, message: 'Password must be at least 8 characters', trigger: 'blur' }
   ],
   confirmPassword: [
     { required: true, validator: validatePass2, trigger: 'blur' }
   ]
 }
 
-// 充值相关
-const showTopUpDialog = ref(false)
-const selectedAmount = ref(50)
-const customAmount = ref(null)
-const paymentMethod = ref('card')
-const toppingUp = ref(false)
-const topUpAmounts = [10, 20, 50, 100, 200]
-
-// 上传头像状态
 const uploading = ref(false)
 
-// 辅助函数
 const formatDate = (date) => {
   if (!date) return ''
   return new Date(date).toLocaleDateString('en-US', {
@@ -513,7 +463,6 @@ const getUserRole = (role) => {
   return role === 1 ? 'Administrator' : 'Normal User'
 }
 
-// 初始化表单数据
 const initForms = () => {
   Object.assign(profileForm, {
     username: userInfo.value.username,
@@ -529,7 +478,6 @@ const initForms = () => {
   })
 }
 
-// 保存个人信息
 const saveProfile = async () => {
   try {
     const fieldsToValidate = ['username', 'phone', 'studentId']
@@ -550,60 +498,60 @@ const saveProfile = async () => {
       address: profileForm.address || ''
     }
 
-    // 拦截器成功后直接返回结果，失败则跳入 catch
     await myAxios.post('/user/update', updateData)
 
     ElMessage.success('Profile updated successfully!')
     await loadUserData()
   } catch (error) {
-    // 校验失败由前端规则触发，业务失败由拦截器触发
     console.error(error)
   } finally {
     saving.value = false
   }
 }
 
-// 重置表单
 const resetProfile = () => {
   initForms()
 }
 
-// 修改密码
 const changePassword = async () => {
-  try {
-    await passwordFormRef.value.validate()
-    changingPassword.value = true
+  if (!passwordFormRef.value) return;
 
-    const res = await myAxios.post('/user/change-password', {
-      oldPassword: passwordForm.currentPassword,
-      newPassword: passwordForm.newPassword
-    })
+  await passwordFormRef.value.validate(async (valid) => {
+    if (valid) {
+      changingPassword.value = true;
+      try {
+        await myAxios.post('/user/change-password', {
+          oldPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword
+        });
 
-    if (res.code === 0) {
-      ElMessage.success('Password changed successfully!')
-      passwordForm.currentPassword = ''
-      passwordForm.newPassword = ''
-      passwordForm.confirmPassword = ''
-      passwordFormRef.value.resetFields()
-    } else {
-      const errorMsg = res.description || res.message || 'Password change failed'
-      ElMessage.error(errorMsg)
+        ElMessage.success('Password changed successfully! Relogging in 2 seconds...');
+        
+        setTimeout(async () => {
+          try {
+            await myAxios.post('/user/logout');
+          } catch (e) {
+            console.error('Logout failed', e);
+          }
+          localStorage.removeItem('user');
+          if (userStore) userStore.userInfo = null;
+          router.push('/login');
+        }, 2000);
+        
+      } catch (error) {
+        console.error('Password change failed', error);
+        const errorMsg = error.message || error.description || 'Current password incorrect or update failed';
+        ElMessage.error(errorMsg); 
+      } finally {
+        changingPassword.value = false;
+      }
     }
-  } catch (error) {
-    ElMessage.error('Failed to change password')
-  } finally {
-    changingPassword.value = false
-  }
-}
+  });
+};
 
-/**
- * 处理头像上传 (修改后)
- * 流程：上传文件 -> 获取URL -> 更新User表 -> 更新视图
- */
 const uploadAvatar = async (options) => {
   const { file } = options
 
-  // 1. 验证文件
   const isValidFormat = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
   const isLt2M = file.size / 1024 / 1024 < 5
 
@@ -619,7 +567,6 @@ const uploadAvatar = async (options) => {
   uploading.value = true
 
   try {
-    // 2. 上传文件到 FileController
     const formData = new FormData()
     formData.append('file', file)
 
@@ -627,29 +574,25 @@ const uploadAvatar = async (options) => {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
 
-    if (fileRes.code !== 0) {
-      throw new Error(fileRes.message || 'File upload failed')
-    }
+    if (!fileRes) throw new Error('Upload API returned empty URL')
 
-    // 获取到图片 URL
-    const newAvatarUrl = fileRes.data
+    const newAvatarUrl = typeof fileRes === 'string' ? fileRes : fileRes.data || fileRes
 
-    // 3. 将 URL 更新到 User 表
-    const updateRes = await myAxios.post('/user/update', {
+    await myAxios.post('/user/update', {
       id: userInfo.value.id,
       avatarUrl: newAvatarUrl
     })
 
-    if (updateRes.code === 0) {
-      // 4. 更新成功，修改本地视图
-      userInfo.value.avatarUrl = newAvatarUrl
-      if (userStore.userInfo) {
-        userStore.userInfo.avatarUrl = newAvatarUrl
-      }
-      ElMessage.success('Avatar updated successfully!')
-    } else {
-      throw new Error(updateRes.message || 'Failed to update user profile')
+    userInfo.value.avatarUrl = newAvatarUrl
+    if (userStore.userInfo) {
+      userStore.userInfo.avatarUrl = newAvatarUrl
     }
+    
+    const localUser = JSON.parse(localStorage.getItem('user') || '{}')
+    localUser.avatarUrl = newAvatarUrl
+    localStorage.setItem('user', JSON.stringify(localUser))
+
+    ElMessage.success('Avatar updated successfully!')
 
   } catch (error) {
     console.error('上传头像失败:', error)
@@ -659,442 +602,87 @@ const uploadAvatar = async (options) => {
   }
 }
 
-// 处理充值
-const processTopUp = async () => {
-  const amount = customAmount.value || selectedAmount.value
-  toppingUp.value = true
-
-  try {
-    await new Promise(resolve => setTimeout(resolve, 1000))
-
-    ElMessageBox.alert(
-        'This feature is currently under development. Wallet top-up functionality will be available soon!',
-        'Feature Coming Soon',
-        {
-          confirmButtonText: 'OK',
-          type: 'info',
-          callback: () => {
-            showTopUpDialog.value = false
-            selectedAmount.value = 50
-            customAmount.value = null
-          }
-        }
-    )
-  } catch (error) {
-    ElMessage.error('Operation failed')
-  } finally {
-    toppingUp.value = false
-  }
-}
-
 onMounted(async () => {
   await loadUserData()
+  // 🌟 页面加载时拉取战绩数据
+  await loadUserStats()
 })
 </script>
 
 <style scoped>
-.profile-page {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
-}
+/* 样式保留不变 */
+.profile-page { max-width: 1200px; margin: 0 auto; padding: 20px; }
+.page-header { text-align: center; margin-bottom: 40px; }
+.page-header h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; color: #1f2937; }
+.page-header p { color: #6b7280; font-size: 16px; margin: 0; }
+.profile-container { display: grid; grid-template-columns: 350px 1fr; gap: 30px; }
+.left-column { display: flex; flex-direction: column; gap: 20px; }
+.user-card { background: white; border-radius: 16px; padding: 30px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); text-align: center; }
+.avatar-section { margin-bottom: 25px; }
+.avatar-wrapper { position: relative; display: inline-block; margin-bottom: 15px; }
+.main-avatar { border: 4px solid #f0f2f5; object-fit: cover; }
+.upload-btn { position: absolute; bottom: 5px; right: 5px; background: white; border: 2px solid #f0f2f5; }
+.user-name { font-size: 24px; font-weight: 700; margin: 10px 0 5px; color: #1f2937; }
+.user-email { color: #6b7280; margin-bottom: 10px; font-size: 14px; }
+.member-since { display: flex; align-items: center; justify-content: center; gap: 6px; color: #9ca3af; font-size: 13px; }
+.stats-section { display: flex; justify-content: space-around; margin: 25px 0; padding: 20px 0; border-top: 1px solid #f3f4f6; border-bottom: 1px solid #f3f4f6; }
+.stat-item { text-align: center; }
+.stat-value { font-size: 24px; font-weight: 700; color: #3b82f6; margin-bottom: 4px; }
+.stat-label { font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+.quick-actions { display: flex; flex-direction: column; gap: 10px; }
+.action-btn { justify-content: flex-start; padding: 12px 20px; border: none; background: #f9fafb; color: #6b7280; }
+.action-btn:hover { background: #f3f4f6; color: #4b5563; }
+.action-btn.active { background: #3b82f6; color: white; }
 
-.page-header {
-  text-align: center;
-  margin-bottom: 40px;
-}
+.activity-card { background: white; border-radius: 16px; padding: 25px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); }
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.header-title { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 600; color: #1f2937; }
+.stats-grid { display: flex; align-items: center; justify-content: space-between; background: #f8fafc; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+.stat-box { text-align: center; flex: 1; }
+.stat-box .stat-value { font-size: 28px; font-weight: 800; line-height: 1.2; margin-bottom: 4px; }
+.text-blue { color: #3b82f6 !important; }
+.text-green { color: #10b981 !important; }
+.stat-box .stat-label { font-size: 13px; color: #64748b; font-weight: 500; }
+.divider { width: 1px; height: 40px; background-color: #e2e8f0; }
+.history-btn { width: 100%; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; color: #475569; border-color: #cbd5e1; transition: all 0.3s; }
+.history-btn:hover { border-color: #3b82f6; color: #3b82f6; background: #eff6ff; }
 
-.page-header h1 {
-  font-size: 32px;
-  font-weight: 700;
-  margin-bottom: 8px;
-  color: #1f2937;
-}
+.status-card { background: white; border-radius: 16px; padding: 25px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); }
+.status-card h3 { margin: 0 0 20px; font-size: 18px; color: #1f2937; }
+.status-items { display: flex; flex-direction: column; gap: 12px; }
+.status-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
+.status-item:last-child { border-bottom: none; }
+.status-item .label { color: #6b7280; font-size: 14px; }
+.status-item .value { color: #1f2937; font-weight: 500; }
 
-.page-header p {
-  color: #6b7280;
-  font-size: 16px;
-  margin: 0;
-}
+.right-column { background: white; border-radius: 16px; padding: 30px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); }
+.tab-content { min-height: 500px; }
+.section-title h2 { font-size: 24px; font-weight: 700; margin-bottom: 8px; color: #1f2937; }
+.section-title p { color: #6b7280; margin-bottom: 30px; }
+.profile-form, .password-form { max-width: 600px; }
+.form-tip { font-size: 12px; color: #9ca3af; margin-top: 4px; }
+.form-actions { margin-top: 30px; }
+.security-section h3 { font-size: 20px; margin-bottom: 20px; color: #1f2937; }
+.security-preferences { background: #f9fafb; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+.preference-item { display: flex; justify-content: space-between; align-items: center; padding: 15px 0; border-bottom: 1px solid #e5e7eb; }
+.preference-item:last-child { border-bottom: none; }
+.preference-info h4 { margin: 0 0 5px; font-size: 16px; color: #1f2937; }
+.preference-info p { margin: 0; color: #6b7280; font-size: 14px; }
 
-.profile-container {
-  display: grid;
-  grid-template-columns: 350px 1fr;
-  gap: 30px;
-}
-
-/* 左侧样式 */
-.left-column {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.user-card {
-  background: white;
-  border-radius: 16px;
-  padding: 30px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-  text-align: center;
-}
-
-.avatar-section {
-  margin-bottom: 25px;
-}
-
-.avatar-wrapper {
-  position: relative;
-  display: inline-block;
-  margin-bottom: 15px;
-}
-
-.main-avatar {
-  border: 4px solid #f0f2f5;
-}
-
-.upload-btn {
-  position: absolute;
-  bottom: 5px;
-  right: 5px;
-  background: white;
-  border: 2px solid #f0f2f5;
-}
-
-.user-name {
-  font-size: 24px;
-  font-weight: 700;
-  margin: 10px 0 5px;
-  color: #1f2937;
-}
-
-.user-email {
-  color: #6b7280;
-  margin-bottom: 10px;
-  font-size: 14px;
-}
-
-.member-since {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  color: #9ca3af;
-  font-size: 13px;
-}
-
-.stats-section {
-  display: flex;
-  justify-content: space-around;
-  margin: 25px 0;
-  padding: 20px 0;
-  border-top: 1px solid #f3f4f6;
-  border-bottom: 1px solid #f3f4f6;
-}
-
-.stat-item {
-  text-align: center;
-}
-
-.stat-value {
-  font-size: 24px;
-  font-weight: 700;
-  color: #3b82f6;
-  margin-bottom: 4px;
-}
-
-.stat-label {
-  font-size: 12px;
-  color: #6b7280;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.quick-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.action-btn {
-  justify-content: flex-start;
-  padding: 12px 20px;
-  border: none;
-  background: #f9fafb;
-  color: #6b7280;
-}
-
-.action-btn:hover {
-  background: #f3f4f6;
-  color: #4b5563;
-}
-
-.action-btn.active {
-  background: #3b82f6;
-  color: white;
-}
-
-.wallet-card {
-  background: white;
-  border-radius: 16px;
-  padding: 25px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-}
-
-.wallet-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20px;
-}
-
-.wallet-header h3 {
-  margin: 0;
-  font-size: 18px;
-  color: #1f2937;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.wallet-balance {
-  text-align: center;
-  margin-bottom: 25px;
-  padding: 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
-  color: white;
-}
-
-.balance-amount {
-  font-size: 36px;
-  font-weight: 800;
-  margin-bottom: 5px;
-}
-
-.balance-label {
-  font-size: 14px;
-  opacity: 0.9;
-}
-
-.wallet-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.status-card {
-  background: white;
-  border-radius: 16px;
-  padding: 25px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-}
-
-.status-card h3 {
-  margin: 0 0 20px;
-  font-size: 18px;
-  color: #1f2937;
-}
-
-.status-items {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.status-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid #f3f4f6;
-}
-
-.status-item:last-child {
-  border-bottom: none;
-}
-
-.status-item .label {
-  color: #6b7280;
-  font-size: 14px;
-}
-
-.status-item .value {
-  color: #1f2937;
-  font-weight: 500;
-}
-
-/* 右侧样式 */
-.right-column {
-  background: white;
-  border-radius: 16px;
-  padding: 30px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-}
-
-.tab-content {
-  min-height: 500px;
-}
-
-.section-title h2 {
-  font-size: 24px;
-  font-weight: 700;
-  margin-bottom: 8px;
-  color: #1f2937;
-}
-
-.section-title p {
-  color: #6b7280;
-  margin-bottom: 30px;
-}
-
-.profile-form,
-.password-form {
-  max-width: 600px;
-}
-
-.form-tip {
-  font-size: 12px;
-  color: #9ca3af;
-  margin-top: 4px;
-}
-
-.form-actions {
-  margin-top: 30px;
-}
-
-.security-section h3 {
-  font-size: 20px;
-  margin-bottom: 20px;
-  color: #1f2937;
-}
-
-.security-preferences {
-  background: #f9fafb;
-  border-radius: 12px;
-  padding: 20px;
-  margin-bottom: 20px;
-}
-
-.preference-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 15px 0;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.preference-item:last-child {
-  border-bottom: none;
-}
-
-.preference-info h4 {
-  margin: 0 0 5px;
-  font-size: 16px;
-  color: #1f2937;
-}
-
-.preference-info p {
-  margin: 0;
-  color: #6b7280;
-  font-size: 14px;
-}
-
-/* 充值对话框 */
-.top-up-dialog {
-  padding: 10px 0;
-}
-
-.amount-selection {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  margin-bottom: 20px;
-}
-
-.amount-option {
-  padding: 15px;
-  border: 2px solid #e5e7eb;
-  border-radius: 8px;
-  text-align: center;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.amount-option:hover {
-  border-color: #3b82f6;
-}
-
-.amount-option.active {
-  background: #3b82f6;
-  color: white;
-  border-color: #3b82f6;
-}
-
-.custom-amount {
-  margin-bottom: 20px;
-}
-
-.payment-methods h4 {
-  margin-bottom: 10px;
-  color: #4b5563;
-}
-
-/* 响应式设计 */
 @media (max-width: 992px) {
-  .profile-container {
-    grid-template-columns: 1fr;
-  }
-
-  .left-column {
-    order: 2;
-  }
-
-  .right-column {
-    order: 1;
-  }
+  .profile-container { grid-template-columns: 1fr; }
+  .left-column { order: 2; }
+  .right-column { order: 1; }
 }
 
 @media (max-width: 768px) {
-  .profile-page {
-    padding: 15px;
-  }
-
-  .page-header h1 {
-    font-size: 24px;
-  }
-
-  .user-card,
-  .wallet-card,
-  .status-card,
-  .right-column {
-    padding: 20px;
-  }
-
-  .stats-section {
-    padding: 15px 0;
-  }
-
-  .stat-value {
-    font-size: 20px;
-  }
-
-  .amount-selection {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .wallet-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-
-  .profile-form :deep(.el-form-item__label) {
-    width: 120px !important;
-  }
-
-  .profile-form :deep(.el-form-item__content) {
-    margin-left: 120px !important;
-  }
+  .profile-page { padding: 15px; }
+  .page-header h1 { font-size: 24px; }
+  .user-card, .activity-card, .status-card, .right-column { padding: 20px; }
+  .stats-section { padding: 15px 0; }
+  .stat-value { font-size: 20px; }
+  .card-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .profile-form :deep(.el-form-item__label) { width: 120px !important; }
+  .profile-form :deep(.el-form-item__content) { margin-left: 120px !important; }
 }
 </style>

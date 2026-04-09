@@ -8,18 +8,26 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cmt322.usmsecondhand.common.ErrorCode;
 import com.cmt322.usmsecondhand.exception.BusinessException;
 import com.cmt322.usmsecondhand.mapper.OrdersMapper;
+// 🌟 新增引入
+import com.cmt322.usmsecondhand.mapper.UserReviewMapper;
+import com.cmt322.usmsecondhand.model.UserReview;
+
 import com.cmt322.usmsecondhand.model.Goods;
 import com.cmt322.usmsecondhand.model.Orders;
 import com.cmt322.usmsecondhand.model.User;
+import com.cmt322.usmsecondhand.model.Message;
+import com.cmt322.usmsecondhand.service.MessageService;
+import com.cmt322.usmsecondhand.service.ConversationService;
+
 import com.cmt322.usmsecondhand.model.request.OrderCreateRequest;
-import com.cmt322.usmsecondhand.model.request.OrderPayRequest; // ✅ 确保导入的是这个包含 itemIds 的类
+import com.cmt322.usmsecondhand.model.request.OrderPayRequest;
 import com.cmt322.usmsecondhand.model.vo.OrdersVO;
 import com.cmt322.usmsecondhand.service.GoodsService;
 import com.cmt322.usmsecondhand.service.OrderService;
 import com.cmt322.usmsecondhand.service.UserService;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +37,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class OrderServiceImpl extends ServiceImpl<OrdersMapper, Orders> implements OrderService {
 
@@ -38,7 +47,16 @@ public class OrderServiceImpl extends ServiceImpl<OrdersMapper, Orders> implemen
     @Resource
     private UserService userService;
 
-    // --- ⬇️ 这个是旧的单商品创建方法，可以保留作为备用，或者删掉 ---
+    @Resource
+    private MessageService messageService;
+
+    @Resource
+    private ConversationService conversationService;
+
+    // 🌟 注入 ReviewMapper 用来查评价
+    @Resource
+    private UserReviewMapper userReviewMapper;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Orders createOrder(OrderCreateRequest request, User loginUser) {
@@ -74,10 +92,12 @@ public class OrderServiceImpl extends ServiceImpl<OrdersMapper, Orders> implemen
         order.setOrderStatus(2); // Paid
         order.setCreateTime(new Date());
         this.save(order);
+        
+        sendSystemNotificationToSeller(goods, loginUser, request.getPaymentMethod());
+
         return order;
     }
 
-    // --- ⬇️ 查询订单列表 (保持不变) ---
     @Override
     public List<OrdersVO> listMyOrders(User loginUser, String role) {
         Long userId = loginUser.getId();
@@ -101,7 +121,6 @@ public class OrderServiceImpl extends ServiceImpl<OrdersMapper, Orders> implemen
         }).collect(Collectors.toList());
     }
 
-    // --- ⬇️ 订单详情 (保持不变) ---
     @Override
     public OrdersVO getOrderDetail(long orderId, User loginUser) {
         Orders order = this.getById(orderId);
@@ -119,7 +138,6 @@ public class OrderServiceImpl extends ServiceImpl<OrdersMapper, Orders> implemen
         return vo;
     }
 
-    // --- ⬇️ 取消订单 (保持不变) ---
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean cancelOrder(long orderId, User loginUser) {
@@ -144,7 +162,6 @@ public class OrderServiceImpl extends ServiceImpl<OrdersMapper, Orders> implemen
         return updateOrder;
     }
 
-    // --- ⬇️ 完成订单 (保持不变) ---
     @Override
     public boolean completeOrder(long orderId, User loginUser) {
         Orders order = this.getById(orderId);
@@ -157,7 +174,6 @@ public class OrderServiceImpl extends ServiceImpl<OrdersMapper, Orders> implemen
         return this.updateById(order);
     }
 
-    // --- ⬇️ 辅助填充 (保持不变) ---
     private void fillOrderVO(OrdersVO vo, Long currentUserId) {
         Goods goods = goodsService.getById(vo.getGoodsId());
         if (goods != null) {
@@ -167,6 +183,9 @@ public class OrderServiceImpl extends ServiceImpl<OrdersMapper, Orders> implemen
             } else if (goods.getImages() != null) {
                 vo.setGoodsImage(goods.getImages().toString());
             }
+            vo.setDeliveryMethod(goods.getDeliveryMethod());
+            vo.setCampus(goods.getCampus());
+            vo.setAddress(goods.getAddress());
         }
         Long counterpartyId = vo.getBuyerId().equals(currentUserId) ? vo.getSellerId() : vo.getBuyerId();
         User user = userService.getById(counterpartyId);
@@ -174,16 +193,24 @@ public class OrderServiceImpl extends ServiceImpl<OrdersMapper, Orders> implemen
             vo.setCounterpartyName(user.getUsername());
             vo.setCounterpartyAvatar(user.getAvatarUrl());
         }
+
+        // 🌟 核心修改：这里使用 setHasReview()
+        QueryWrapper<UserReview> reviewQuery = new QueryWrapper<>();
+        reviewQuery.eq("order_id", vo.getId());
+        UserReview review = userReviewMapper.selectOne(reviewQuery);
+        
+        if (review != null) {
+            vo.setHasReview(true); // 使用新字段名
+            vo.setReviewRating(review.getRating());
+            vo.setReviewContent(review.getContent());
+        } else {
+            vo.setHasReview(false); // 使用新字段名
+        }
     }
 
-    /**
-     * ✅ 核心修改：处理支付 (支持批量)
-     * 对应前端 Payment 页面
-     */
     @Override
-    @Transactional(rollbackFor = Exception.class) // 开启事务，任何一步报错全部回滚
+    @Transactional(rollbackFor = Exception.class)
     public boolean processPayment(OrderPayRequest request, User buyer) {
-        // 1. 获取参数
         List<Long> itemIds = request.getItemIds();
         Integer payMethod = request.getPayMethod();
         BigDecimal amount = request.getAmount();
@@ -192,16 +219,14 @@ public class OrderServiceImpl extends ServiceImpl<OrdersMapper, Orders> implemen
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "No items selected");
         }
 
-        // 2. 批量查询商品
         List<Goods> goodsList = goodsService.listByIds(itemIds);
         if (goodsList.size() != itemIds.size()) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "Some items are invalid or removed");
         }
 
-        // 3. 校验商品状态
         BigDecimal calculatedTotal = BigDecimal.ZERO;
         for (Goods goods : goodsList) {
-            if (goods.getStatus() != 1) { // 必须是 1-Available
+            if (goods.getStatus() != 1) { 
                 throw new BusinessException(ErrorCode.PARAMS_ERROR, "Item '" + goods.getTitle() + "' is already sold");
             }
             if (goods.getUserId().equals(buyer.getId())) {
@@ -210,79 +235,71 @@ public class OrderServiceImpl extends ServiceImpl<OrdersMapper, Orders> implemen
             calculatedTotal = calculatedTotal.add(goods.getPrice());
         }
 
-        // 4. (可选) 校验前端传来的金额和后端计算的是否一致
-        // if (calculatedTotal.compareTo(amount) != 0) { ... }
-
-        // 5. 如果是余额支付，扣款
-        if (request.getPayMethod() == 1) { // 1 = Wallet Balance
+        if (request.getPayMethod() == 1) { 
             if (buyer.getBalance().compareTo(amount) < 0) {
                 throw new BusinessException(ErrorCode.OPERATION_ERROR, "Insufficient wallet balance");
             }
-            // 扣除余额
             buyer.setBalance(buyer.getBalance().subtract(amount));
             userService.updateById(buyer);
         }
 
-        // 6. 循环处理每个商品：下架 + 生成订单
         for (Goods goods : goodsList) {
-            // 6.1 下架商品 (Status -> 2 Sold)
             goods.setStatus(2);
             boolean updateGoods = goodsService.updateById(goods);
             if (!updateGoods) {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, "Failed to update goods status");
             }
 
-            // 6.2 生成订单
             Orders order = new Orders();
             String orderNo = "ORD" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
             order.setOrderNo(orderNo);
             order.setGoodsId(goods.getId());
             order.setBuyerId(buyer.getId());
             order.setSellerId(goods.getUserId());
-            order.setTotalAmount(goods.getPrice()); // 这里存单价
+            order.setTotalAmount(goods.getPrice());
             order.setQuantity(1);
             order.setPaymentMethod(payMethod);
 
-            // 状态设置：余额支付=已支付(2)，现金支付=待支付/待交易(1)
             order.setOrderStatus(payMethod == 1 ? 2 : 1);
             if (payMethod == 1) {
                 order.setPaymentTime(new Date());
             }
             order.setCreateTime(new Date());
 
-            // 6.3 保存订单
             this.save(order);
+            sendSystemNotificationToSeller(goods, buyer, payMethod);
         }
 
         return true;
     }
 
-
     @Override
     public IPage<OrdersVO> listOrderVOByPage(int current, int size, String orderNo, Integer status) {
-        // 1. 注意这里：泛型必须是你的实体类 Orders，而不是 Order
         Page<Orders> orderPage = new Page<>(current, size);
         QueryWrapper<Orders> queryWrapper = new QueryWrapper<>();
 
         queryWrapper.eq(StringUtils.isNotBlank(orderNo), "orderNo", orderNo);
-        queryWrapper.eq(status != null, "orderStatus", status); // 注意字段名是否为 orderStatus
+        queryWrapper.eq(status != null, "orderStatus", status); 
         queryWrapper.orderByDesc("createTime");
 
         this.page(orderPage, queryWrapper);
 
-        // 2. 这里的变量类型也要改为 Orders
         List<OrdersVO> voList = orderPage.getRecords().stream().map(ordersEntity -> {
             OrdersVO vo = new OrdersVO();
             BeanUtils.copyProperties(ordersEntity, vo);
 
-            // 3. 现在 getBuyerId() 等方法就可以正常调用了
             User buyer = userService.getById(ordersEntity.getBuyerId());
             User seller = userService.getById(ordersEntity.getSellerId());
             if (buyer != null) vo.setBuyerName(buyer.getUsername());
             if (seller != null) vo.setSellerName(seller.getUsername());
 
             Goods goods = goodsService.getById(ordersEntity.getGoodsId());
-            if (goods != null) vo.setGoodsTitle(goods.getTitle());
+            if (goods != null) {
+                vo.setGoodsTitle(goods.getTitle());
+                vo.setDeliveryMethod(goods.getDeliveryMethod());
+                vo.setCampus(goods.getCampus());
+                vo.setAddress(goods.getAddress());
+            }
 
             return vo;
         }).collect(Collectors.toList());
@@ -290,5 +307,31 @@ public class OrderServiceImpl extends ServiceImpl<OrdersMapper, Orders> implemen
         Page<OrdersVO> voPage = new Page<>(current, size, orderPage.getTotal());
         voPage.setRecords(voList);
         return voPage;
+    }
+
+    private void sendSystemNotificationToSeller(Goods goods, User buyer, Integer payMethod) {
+        try {
+            Long conversationId = conversationService.openSystemConversation(goods.getUserId());
+            Message sysMsg = new Message();
+            sysMsg.setConversationId(conversationId);
+            sysMsg.setSenderId(0L); 
+
+            String payStr = (payMethod != null && payMethod == 1) ? "Wallet Balance" : "Cash/Offline Payment";
+            String content = String.format(
+                "📢 System Alert: Great news! Your item [%s] has been purchased by [%s] via [%s]. " + 
+                "Please check your orders and arrange the transaction with the buyer soon!",
+                goods.getTitle(), buyer.getUsername(), payStr
+            );
+
+            sysMsg.setContent(content);
+            sysMsg.setType(1); 
+            sysMsg.setCreateTime(new Date());
+            
+            messageService.save(sysMsg);
+            log.info("System notification successfully sent to seller ID: {}", goods.getUserId());
+            
+        } catch (Exception e) {
+            log.error("Failed to send system alert to seller for goods ID: {}", goods.getId(), e);
+        }
     }
 }

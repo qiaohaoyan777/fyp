@@ -85,6 +85,12 @@ public class GoodsVO implements Serializable {
      */
     private String campus;
 
+    // 🌟 新增：交易方式 (1: 面交, 2: 邮寄/送货)
+    private Integer deliveryMethod;
+
+    // 🌟 新增：详细交易地址
+    private String address;
+
     private String userName;
 
     private String userAvatar;
@@ -111,6 +117,12 @@ public class GoodsVO implements Serializable {
     private UserVO user;
 
     /**
+     * 收藏量
+     */
+    private Integer wishlistCount;
+
+
+    /**
      * 包装函数：将 Goods 实体转为 GoodsVO
      */
     public static GoodsVO objToVo(Goods goods) {
@@ -119,6 +131,7 @@ public class GoodsVO implements Serializable {
         }
         GoodsVO goodsVO = new GoodsVO();
 
+        // 🌟 因为名字完全一样，BeanUtils 会自动帮我们把新增的 address 和 deliveryMethod 也复制过去！
         BeanUtils.copyProperties(goods, goodsVO);
         return goodsVO;
     }

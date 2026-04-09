@@ -11,6 +11,9 @@ import java.util.Date;
  */
 @Data
 public class UserVO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
+
     /**
      * id
      */
@@ -40,6 +43,7 @@ public class UserVO implements Serializable {
      * 电话
      */
     private String phone;
+
     /**
      * USM Email (@usm.my)
      */
@@ -61,7 +65,7 @@ public class UserVO implements Serializable {
     private String studentId;
 
     /**
-     * school
+     * school (学院/专业)
      */
     private String school;
 
@@ -81,7 +85,7 @@ public class UserVO implements Serializable {
     private Date createTime;
 
     /**
-     *
+     * 更新时间
      */
     private Date updateTime;
 
@@ -90,5 +94,20 @@ public class UserVO implements Serializable {
      */
     private Integer userRole;
 
-    private static final long serialVersionUID = 1L;
+    // 🌟 核心新增：卖家评价统计信息 (由 GoodsServiceImpl 实时计算填充)
+    
+    /**
+     * 平均星级 (来自买家评价)
+     */
+    private Double rating;
+
+    /**
+     * 评论总数
+     */
+    private Integer reviewCount;
+
+    /**
+     * 在售商品总数
+     */
+    private Integer itemCount;
 }

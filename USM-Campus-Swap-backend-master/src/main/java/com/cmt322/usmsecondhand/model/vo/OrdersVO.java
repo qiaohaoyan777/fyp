@@ -3,32 +3,34 @@ package com.cmt322.usmsecondhand.model.vo;
 import com.cmt322.usmsecondhand.model.Orders;
 import lombok.Data;
 import org.springframework.beans.BeanUtils;
-
 import java.io.Serializable;
 
-/**
- * 订单展示对象 (包含商品和对方信息)
- */
 @Data
 public class OrdersVO extends Orders implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    // 商品快照信息
     private String goodsTitle;
     private String goodsImage;
+    private Integer deliveryMethod;
+    private String campus;
+    private String address;
 
-    // 卖家/买家信息 (视当前查看者身份而定)
-    private String counterpartyName; // 交易对手名字
+    private String counterpartyName; 
     private String counterpartyAvatar;
+    private String buyerName;  
+    private String sellerName; 
 
-    private String buyerName;  // 用于展示买家用户名
-    private String sellerName; // 用于展示卖家用户名
+    // 🌟 核心修改：把 isReviewed 改成 hasReview，避开 Jackson 序列化的坑！
+    private Boolean hasReview;    
+    private Integer reviewRating;  
+    private String reviewContent;  
 
     public static OrdersVO objToVo(Orders orders) {
         if (orders == null) return null;
         OrdersVO vo = new OrdersVO();
         BeanUtils.copyProperties(orders, vo);
+        vo.setHasReview(false); // 默认未评价
         return vo;
     }
 }

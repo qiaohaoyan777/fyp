@@ -18,6 +18,14 @@ public class GoodsPublishRequest {
     private Integer condition;
     private String campus;
     private List<Integer> contactTypes;
+    
+    /**
+     * 交易方式 (1: 面交, 2: 邮寄/送货)
+     */
     private Integer deliveryMethod;
-    private String pickupLocation;
+    
+    /**
+     * 具体交易地点 (配合前端和数据库统一使用 address)
+     */
+    private String address;
 }

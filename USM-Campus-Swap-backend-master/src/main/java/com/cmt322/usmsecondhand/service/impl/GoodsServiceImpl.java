@@ -8,9 +8,13 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cmt322.usmsecondhand.common.ErrorCode;
 import com.cmt322.usmsecondhand.exception.BusinessException;
 import com.cmt322.usmsecondhand.mapper.GoodsMapper;
+import com.cmt322.usmsecondhand.mapper.UserReviewMapper;
+import com.cmt322.usmsecondhand.model.UserReview;
 import com.cmt322.usmsecondhand.model.Category;
 import com.cmt322.usmsecondhand.model.Goods;
 import com.cmt322.usmsecondhand.model.User;
+import com.cmt322.usmsecondhand.model.Wishlist; 
+import com.cmt322.usmsecondhand.service.WishlistService;
 import com.cmt322.usmsecondhand.model.request.GoodsPublishRequest;
 import com.cmt322.usmsecondhand.model.request.GoodsUpdateRequest;
 import com.cmt322.usmsecondhand.model.vo.GoodsVO;
@@ -23,9 +27,12 @@ import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -38,12 +45,17 @@ public class GoodsServiceImpl extends ServiceImpl<GoodsMapper, Goods> implements
     @Resource
     private CategoryService categoryService;
 
-    // 用于 List<String> 和 JSON String 之间的转换
+    @Lazy
+    @Resource
+    private WishlistService wishlistService;
+
+    @Resource
+    private UserReviewMapper userReviewMapper;
+
     private final Gson gson = new Gson();
 
     @Override
     public long publishGoods(GoodsPublishRequest request, User loginUser) {
-        // 1. 参数校验
         if (request == null || StringUtils.isAnyBlank(request.getTitle(), request.getDescription())) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
@@ -51,28 +63,20 @@ public class GoodsServiceImpl extends ServiceImpl<GoodsMapper, Goods> implements
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "Price cannot be negative");
         }
 
-        // 2. 转换对象
         Goods goods = new Goods();
         BeanUtils.copyProperties(request, goods);
-
-        // 设置默认值
         goods.setUserId(loginUser.getId());
-        goods.setStatus(1); // 1-Available
+        goods.setStatus(1); 
         goods.setViewCount(0);
         goods.setLikeCount(0);
 
-        // 3. 处理图片逻辑 (List<String> -> JSON String)
         if (request.getImages() != null && !request.getImages().isEmpty()) {
-            // A. 将 List 转为 JSON 存入 images 字段
             goods.setImages(gson.toJson(request.getImages()));
-
-            // B. 如果封面图为空，自动取第一张图作为封面
             if (StringUtils.isBlank(goods.getCoverImage())) {
                 goods.setCoverImage(request.getImages().get(0));
             }
         }
 
-        // 4. 处理联系方式
         if (request.getContactTypes() != null && !request.getContactTypes().isEmpty()) {
             goods.setContactType(request.getContactTypes().get(0));
         }
@@ -92,7 +96,6 @@ public class GoodsServiceImpl extends ServiceImpl<GoodsMapper, Goods> implements
             throw new BusinessException(ErrorCode.NULL_ERROR, "Goods not found");
         }
 
-        // Security Check: 只有发布者或管理员可以修改
         if (!goods.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser)) {
             throw new BusinessException(ErrorCode.NO_AUTH);
         }
@@ -100,11 +103,8 @@ public class GoodsServiceImpl extends ServiceImpl<GoodsMapper, Goods> implements
         BeanUtils.copyProperties(request, goods);
         Goods oldGoods = this.getById(request.getId());
         goods.setUserId(oldGoods.getUserId());
-        // 更新时也要重新处理图片 List -> JSON
         if (request.getImages() != null) {
             goods.setImages(gson.toJson(request.getImages()));
-
-            // 如果更新导致封面图没了，也可以在这里补一个逻辑（可选）
             if (StringUtils.isBlank(goods.getCoverImage()) && !request.getImages().isEmpty()) {
                 goods.setCoverImage(request.getImages().get(0));
             }
@@ -116,24 +116,18 @@ public class GoodsServiceImpl extends ServiceImpl<GoodsMapper, Goods> implements
     @Override
     public List<GoodsVO> searchGoods(String keyword, Long categoryId) {
         QueryWrapper<Goods> queryWrapper = new QueryWrapper<>();
-
-        // 只查询未删除且在售的商品
         queryWrapper.eq("status", 1);
-        queryWrapper.eq("isDelete", 0); // 确保加上逻辑删除判断
+        queryWrapper.eq("isDelete", 0);
 
         if (StringUtils.isNotBlank(keyword)) {
             queryWrapper.and(qw -> qw.like("title", keyword).or().like("description", keyword));
         }
         if (categoryId != null && categoryId > 0) {
-            // 注意：这里使用的是字符串 "categoryId"，确保 Entity 里的 @TableField 已生效
             queryWrapper.eq("categoryId", categoryId);
         }
 
         queryWrapper.orderByDesc("createTime");
-
         List<Goods> goodsList = this.list(queryWrapper);
-
-        // 填充 VO 信息 (卖家头像等)
         return goodsList.stream().map(this::getGoodsVO).collect(Collectors.toList());
     }
 
@@ -143,11 +137,10 @@ public class GoodsServiceImpl extends ServiceImpl<GoodsMapper, Goods> implements
         if (goods == null) {
             throw new BusinessException(ErrorCode.NULL_ERROR);
         }
-        // 权限校验
         if (!isAdmin && !goods.getUserId().equals(loginUser.getId())) {
             throw new BusinessException(ErrorCode.NO_AUTH);
         }
-        return this.removeById(id); // 逻辑删除 (前提是 application.yml 配置了 logic-delete-value)
+        return this.removeById(id); 
     }
 
     @Override
@@ -166,27 +159,51 @@ public class GoodsServiceImpl extends ServiceImpl<GoodsMapper, Goods> implements
 
     @Override
     public GoodsVO getGoodsDetail(long id, HttpServletRequest request) {
-        // 1. 查商品
         Goods goods = this.getById(id);
         if (goods == null) {
             throw new BusinessException(ErrorCode.NULL_ERROR);
         }
 
-        // 2. 转 VO
         GoodsVO goodsVO = GoodsVO.objToVo(goods);
+        goodsVO.setUserId(goods.getUserId());
 
-        // 3. 填充用户信息
+        long wishlistCount = wishlistService.count(new QueryWrapper<Wishlist>().eq("goodsId", goods.getId()));
+        goodsVO.setWishlistCount((int) wishlistCount);
+
         Long userId = goods.getUserId();
         if (userId != null) {
             User user = userService.getById(userId);
             if (user != null) {
                 UserVO userVO = new UserVO();
                 BeanUtils.copyProperties(user, userVO);
+                
+                // 1. 统计在售商品
+                long items = this.count(new LambdaQueryWrapper<Goods>().eq(Goods::getUserId, userId).eq(Goods::getStatus, 1));
+                userVO.setItemCount((int) items);
+                
+                // 2. 高精度计算平均评分
+                List<UserReview> reviews = userReviewMapper.selectList(new QueryWrapper<UserReview>().eq("seller_id", userId));
+                if (reviews != null && !reviews.isEmpty()) {
+                    userVO.setReviewCount(reviews.size());
+                    
+                    // 计算总分
+                    double sum = reviews.stream().mapToDouble(UserReview::getRating).sum();
+                    double avg = sum / reviews.size();
+                    
+                    // 🌟 核心改进：使用 BigDecimal 进行四舍五入，保留一位小数
+                    // 14 / 3 = 4.666... -> 4.7
+                    BigDecimal bd = new BigDecimal(avg);
+                    double finalRating = bd.setScale(1, RoundingMode.HALF_UP).doubleValue();
+                    userVO.setRating(finalRating);
+                } else {
+                    userVO.setReviewCount(0);
+                    userVO.setRating(5.0); 
+                }
+
                 goodsVO.setUser(userVO);
             }
         }
 
-        // 4. 填充分类名称
         Long categoryId = goods.getCategoryId();
         if (categoryId != null && categoryId > 0) {
             Category category = categoryService.getById(categoryId);
@@ -200,43 +217,34 @@ public class GoodsServiceImpl extends ServiceImpl<GoodsMapper, Goods> implements
 
     @Override
     public IPage<GoodsVO> listGoodsVOByPage(int current, int size, String title, Long categoryId, Integer status) {
-        // 1. 构造 MyBatis-Plus 分页对象
         Page<Goods> goodsPage = new Page<>(current, size);
-
-        // 2. 构造查询条件
         QueryWrapper<Goods> queryWrapper = new QueryWrapper<>();
 
-        // 模糊匹配标题 (如果前端传了 keyword)
         queryWrapper.like(StringUtils.isNotBlank(title), "title", title);
-
-        // 精确匹配分类 (如果前端选了 category)
         queryWrapper.eq(categoryId != null && categoryId > 0, "categoryId", categoryId);
-
-        // 匹配状态 (通常只查 status=1 上架中的商品)
         queryWrapper.eq(status != null, "status", status);
-
-        // 按创建时间倒序排列 (让新发布的商品排在前面)
         queryWrapper.orderByDesc("createTime");
 
-        // 3. 执行查询
         this.page(goodsPage, queryWrapper);
 
-        // 4. 将查询结果 (Goods 实体) 转换为前端需要的 GoodsVO
         List<Goods> goodsList = goodsPage.getRecords();
 
         List<GoodsVO> goodsVOList = goodsList.stream().map(goods -> {
             GoodsVO goodsVO = new GoodsVO();
             BeanUtils.copyProperties(goods, goodsVO);
+            goodsVO.setUserId(goods.getUserId());
+
+            long wishlistCount = wishlistService.count(new QueryWrapper<Wishlist>().eq("goodsId", goods.getId()));
+            goodsVO.setWishlistCount((int) wishlistCount);
 
             User seller = userService.getById(goods.getUserId());
             if (seller != null) {
-                goodsVO.setUserName(seller.getUsername());   // 设置卖家名字
-                goodsVO.setUserAvatar(seller.getAvatarUrl()); // 设置卖家头像 (前端卡片需要这个)
+                goodsVO.setUserName(seller.getUsername());   
+                goodsVO.setUserAvatar(seller.getAvatarUrl()); 
             }
             return goodsVO;
         }).collect(Collectors.toList());
 
-        // 5. 封装回分页对象并返回
         Page<GoodsVO> goodsVOPage = new Page<>(current, size, goodsPage.getTotal());
         goodsVOPage.setRecords(goodsVOList);
 
@@ -257,6 +265,7 @@ public class GoodsServiceImpl extends ServiceImpl<GoodsMapper, Goods> implements
 
         return goodsList.stream().map(goods -> {
             GoodsVO vo = GoodsVO.objToVo(goods);
+            vo.setUserId(goods.getUserId());
             return vo;
         }).collect(Collectors.toList());
     }
@@ -277,18 +286,35 @@ public class GoodsServiceImpl extends ServiceImpl<GoodsMapper, Goods> implements
         return this.updateById(updateGoods);
     }
 
-    /**
-     * 辅助方法：将 Goods 转为 GoodsVO 并填充卖家信息
-     */
     private GoodsVO getGoodsVO(Goods goods) {
         GoodsVO goodsVO = GoodsVO.objToVo(goods);
-        // 查询卖家信息
+        goodsVO.setUserId(goods.getUserId()); 
         Long userId = goods.getUserId();
         if (userId != null && userId > 0) {
             User seller = userService.getById(userId);
             if (seller != null) {
                 UserVO userVO = new UserVO();
                 BeanUtils.copyProperties(seller, userVO);
+                
+                // 1. 统计在售商品
+                long items = this.count(new LambdaQueryWrapper<Goods>().eq(Goods::getUserId, userId).eq(Goods::getStatus, 1));
+                userVO.setItemCount((int) items);
+                
+                // 2. 高精度计算平均评分
+                List<UserReview> reviews = userReviewMapper.selectList(new QueryWrapper<UserReview>().eq("seller_id", userId));
+                if (reviews != null && !reviews.isEmpty()) {
+                    userVO.setReviewCount(reviews.size());
+                    double sum = reviews.stream().mapToDouble(UserReview::getRating).sum();
+                    double avg = sum / reviews.size();
+                    
+                    BigDecimal bd = new BigDecimal(avg);
+                    double finalRating = bd.setScale(1, RoundingMode.HALF_UP).doubleValue();
+                    userVO.setRating(finalRating);
+                } else {
+                    userVO.setReviewCount(0);
+                    userVO.setRating(5.0); 
+                }
+
                 goodsVO.setUser(userVO);
             }
         }

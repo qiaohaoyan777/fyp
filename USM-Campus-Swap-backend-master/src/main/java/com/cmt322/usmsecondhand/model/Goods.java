@@ -67,6 +67,13 @@ public class Goods {
     @TableField(value = "contactType")
     private Integer contactType;
 
+    // 🌟 新增：交易方式 (1: 面交, 2: 邮寄/送货)
+    @TableField(value = "deliveryMethod")
+    private Integer deliveryMethod;
+
+    // 🌟 新增：详细交易地址
+    private String address;
+
     @TableField(value = "createTime")
     private Date createTime;
 

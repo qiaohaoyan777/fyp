@@ -4,20 +4,17 @@ import { userLogin, userLogout, getCurrentUser } from '@/api/user'
 
 export const useUserStore = defineStore('user', () => {
     const userInfo = ref(null)
+    
+    // 🚨 新增：全局未读消息总数
+    const totalUnread = ref(0)
 
     // 1. 登录
     const login = async (loginForm) => {
-        // 【修改点】直接获取数据，不需要判断 res.code
-        // 如果登录失败，拦截器会抛出异常，直接跳到 Login.vue 的 catch 块
         const userData = await userLogin(loginForm)
-
-        // 此时 userData 就是后端返回的 User 对象
         userInfo.value = userData
         localStorage.setItem('user', JSON.stringify(userData))
-
         return userData
     }
-
 
     // 2. 获取当前用户
     const fetchCurrentUser = async () => {
@@ -40,8 +37,14 @@ export const useUserStore = defineStore('user', () => {
             console.error('注销错误:', error)
         } finally {
             userInfo.value = null
+            totalUnread.value = 0 // 🚨 注销时清空未读数
             localStorage.removeItem('user')
         }
+    }
+
+    // 🚨 新增：修改未读数的方法
+    const setTotalUnread = (count) => {
+        totalUnread.value = count
     }
 
     const isLoggedIn = () => {
@@ -50,6 +53,8 @@ export const useUserStore = defineStore('user', () => {
 
     return {
         userInfo,
+        totalUnread, // 🚨 记得返回这个变量
+        setTotalUnread, // 🚨 记得返回这个方法
         login,
         logout,
         fetchCurrentUser,

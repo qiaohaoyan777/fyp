@@ -1,4 +1,10 @@
 spring:
+  # 👇👇👇 从这里开始，新加这 4 行配置 👇👇👇
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 50MB
+  # 👆👆👆 到这里结束 👆👆👆
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Singapore
@@ -10,7 +16,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/usmsecondhand?serverTimezone=Asia/Shanghai
     username: root
-    password: root
+    password:
   # Session 配置
   session:
     timeout: 30m
@@ -32,7 +38,7 @@ server:
 
 file:
   # Windows 本地路径示例
-  upload-dir: E:/cmt322 secondhand/uploads/
+  upload-dir: E:/fyp/uploads/
   domain: http://localhost:8081/api
 
 springdoc:
@@ -52,3 +58,7 @@ mybatis-plus:
       logic-delete-field: isDelete
       logic-delete-value: 1
       logic-not-delete-value: 0
+# 填入你申请的 Gemini API Key
+gemini:
+  api:
+    key: "AIzaSyD2J4Xq9nyvkhYOB7IhL29Nr1Jw2rQ7dqg"

@@ -30,8 +30,15 @@
             </div>
             <p class="conversation-preview">{{ conversation.lastMessage }}</p>
             <div class="conversation-meta">
-              <el-tag v-if="conversation.isSeller" type="success" size="small">Seller</el-tag>
-              <el-tag v-if="conversation.isBuyer" type="warning" size="small">Buyer</el-tag>
+              
+              <el-tag v-if="conversation.isSystem" type="info" size="small" effect="dark">System</el-tag>
+              
+              <template v-else>
+                <el-tag v-if="conversation.isOpponentSeller" type="success" size="small">Seller</el-tag>
+                <el-tag v-else type="warning" size="small">Buyer</el-tag>
+              </template>
+              
+              <el-badge v-if="conversation.unread > 0" :value="conversation.unread" :max="99" class="unread-badge" />
             </div>
           </div>
         </div>
@@ -53,36 +60,56 @@
             <el-avatar :size="40" :src="activeConversation.avatar" />
             <div class="user-details">
               <h3>{{ activeConversation.name }}</h3>
-              <p class="user-status">
-                <span class="status-dot" :class="activeConversation.isOnline ? 'online' : 'offline'"></span>
-                {{ activeConversation.isOnline ? 'Online' : 'Offline' }}
+              
+              <p class="user-status" v-if="activeConversation.isSystem">
+                <span class="status-dot online"></span>
+                24/7 Active
               </p>
+              
             </div>
           </div>
         </div>
+        
+        <div class="chat-product-banner" v-if="activeConversation?.itemId && !activeConversation.isSystem">
+          <div class="banner-left">
+            <el-icon><Box /></el-icon>
+            <span class="item-name-text">Discussing: {{ activeConversation.itemName }}</span>
+          </div>
+          <el-button 
+            size="small" 
+            type="primary" 
+            plain 
+            @click="router.push(`/goods/${activeConversation.itemId}`)"
+          >
+            View Item
+          </el-button>
+        </div>
 
         <div class="messages-container" ref="messagesContainer">
-          <div
-              v-for="message in messages"
-              :key="message.id"
-              :class="['message-wrapper', message.sender === 'me' ? 'sent' : 'received']"
-          >
-            <el-avatar
-                v-if="message.sender !== 'me'"
-                :size="32"
-                :src="activeConversation.avatar"
-                class="message-avatar"
-            />
-            <div class="message-content">
-              <p class="message-text">{{ message.content }}</p>
-              <span class="message-time">{{ formatTime(message.timestamp) }}</span>
+          <template v-for="(message, index) in messages" :key="message.id">
+            
+            <div class="time-divider" v-if="showTimestamp(index)">
+              {{ formatTime(message.timestamp) }}
             </div>
-          </div>
+
+            <div :class="['message-wrapper', message.sender === 'me' ? 'sent' : 'received']">
+              <el-avatar
+                  v-if="message.sender !== 'me'"
+                  :size="32"
+                  :src="activeConversation.avatar"
+                  class="message-avatar"
+              />
+              <div class="message-content">
+                <p class="message-text">{{ message.content }}</p>
+              </div>
+            </div>
+            
+          </template>
         </div>
 
         <div class="message-input-container">
           <div class="input-actions">
-            <el-button type="text" class="action-btn">
+            <el-button type="text" class="action-btn" @click="ElMessage.info('Feature coming soon!')">
               <el-icon><Picture /></el-icon>
             </el-button>
             <el-button type="text" class="action-btn">
@@ -93,7 +120,8 @@
               v-model="newMessage"
               type="textarea"
               :rows="2"
-              placeholder="Type a message..."
+              :placeholder="activeConversation.isSystem ? 'You cannot reply to system messages.' : 'Type a message...'"
+              :disabled="activeConversation.isSystem"
               :maxlength="500"
               show-word-limit
               @keydown.enter.exact.prevent="sendMessage"
@@ -101,7 +129,7 @@
           <el-button
               type="primary"
               @click="sendMessage"
-              :disabled="!newMessage.trim()"
+              :disabled="!newMessage.trim() || activeConversation.isSystem"
               class="send-btn"
           >
             <el-icon><Promotion /></el-icon>
@@ -114,27 +142,16 @@
 </template>
 
 <script setup>
-// 1. ✅ 引入 onUnmounted
 import { ref, computed, onMounted, nextTick, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import {
-  ChatDotRound,
-  Search,
-  User,
-  Box,
-  Picture,
-  Files,
-  Promotion
-} from '@element-plus/icons-vue'
-
+import { ChatDotRound, Search, Box, Picture, Files, Promotion } from '@element-plus/icons-vue'
 import request from '@/plugins/request.js'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
-
 const searchKeyword = ref('')
 const activeConversation = ref(null)
 const newMessage = ref('')
@@ -142,21 +159,25 @@ const messagesContainer = ref(null)
 const conversations = ref([])
 const messages = ref([])
 
+const localPrevUnread = ref(-1)
+
+const sendSound = new Audio('https://cdn.jsdelivr.net/npm/botpress@10.29.0/lib/web/audio/notification.mp3')
+const receiveSound = new Audio('https://cdn.jsdelivr.net/npm/whatsapp-notification-sound@1.0.0/notification.mp3')
+
 const getUserId = () => {
   const storedUser = localStorage.getItem('user')
-  if (storedUser) {
-    try {
-      return JSON.parse(storedUser).id || 0
-    } catch (e) {
-      return 0
-    }
-  }
-  return 0
+  return storedUser ? JSON.parse(storedUser).id : 0
 }
 const userId = ref(getUserId())
 let pollingTimer = null
 
-// 过滤对话列表
+const showTimestamp = (index) => {
+  if (index === 0) return true;
+  const prevTime = new Date(messages.value[index - 1].timestamp).getTime();
+  const currTime = new Date(messages.value[index].timestamp).getTime();
+  return (currTime - prevTime) > 5 * 60 * 1000;
+}
+
 const filteredConversations = computed(() => {
   if (!searchKeyword.value) return conversations.value
   return conversations.value.filter(conv =>
@@ -165,47 +186,85 @@ const filteredConversations = computed(() => {
   )
 })
 
-// 加载会话列表
 const loadConversations = async () => {
   try {
     const res = await request.get('/conversation/my')
-    conversations.value = res.map(c => ({
-      id: Number(c.id),
-      name: c.targetName || 'Unknown User',
-      avatar: c.targetAvatar || '',
-      lastMessage: c.lastMessage,
-      lastTime: c.lastTime,
-      unread: 0,
-      isSeller: c.sellerId === userId.value,
-      isBuyer: c.buyerId === userId.value,
-      userId: c.sellerId === userId.value ? c.buyerId : c.sellerId,
-      itemId: c.goodsId,
-      isOnline: c.isOnline || false
-    }))
+    let totalUnreadCount = 0;
+
+    conversations.value = res.map(c => {
+      const currentUnread = c.unreadCount || 0;
+      totalUnreadCount += currentUnread;
+
+      // 🌟 核心判断：如果没有真实名字，或者是系统发送者（比如ID为0），判定为系统消息
+      const isSystemMsg = !c.targetName || c.targetName === 'Unknown User' || Number(c.targetId) === 0;
+      
+      const iAmSeller = Number(userId.value) === Number(c.sellerId);
+
+      return {
+        id: Number(c.id),
+        name: isSystemMsg ? 'System Notification' : c.targetName,
+        // 系统消息使用官方铃铛头像
+        avatar: isSystemMsg ? 'https://img.icons8.com/color/48/appointment-reminders--v1.png' : (c.targetAvatar || 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png'),
+        lastMessage: c.lastMessage,
+        lastTime: c.lastTime,
+        unread: currentUnread, 
+        isOpponentSeller: !iAmSeller, 
+        isSystem: isSystemMsg, // 记录身份
+        itemId: c.goodsId,
+        itemName: c.itemName || c.goodsName || c.title || 'Product',
+      }
+    })
+
+    if (localPrevUnread.value !== -1 && totalUnreadCount > localPrevUnread.value) {
+      try {
+        receiveSound.currentTime = 0; 
+        receiveSound.volume = 0.6;
+        receiveSound.play();
+      } catch(e) { 
+        console.warn('浏览器防打扰机制拦截了声音'); 
+      }
+    }
+    
+    localPrevUnread.value = totalUnreadCount;
+
+    if (userStore?.setTotalUnread) {
+      userStore.setTotalUnread(totalUnreadCount);
+    }
   } catch (error) {
-    console.error(error)
-    ElMessage.error('Failed to load conversations')
+    console.error('Failed to load conversations', error)
   }
 }
 
-// 选择会话
 const selectConversation = async (conversationId) => {
   conversationId = Number(conversationId)
   activeConversation.value = conversations.value.find(conv => conv.id === conversationId)
   if (!activeConversation.value) return
-  // 手动点击时，isPolling 为 false
+
+  const unreadCount = activeConversation.value.unread
+  if (unreadCount > 0) {
+    activeConversation.value.unread = 0;
+    
+    if (userStore?.setTotalUnread) {
+      const newTotal = Math.max(0, userStore.totalUnread - unreadCount);
+      userStore.setTotalUnread(newTotal);
+      localPrevUnread.value = newTotal; 
+    }
+    
+    try {
+      await request.post(`/message/clearUnread?conversationId=${conversationId}`)
+    } catch (e) {
+      console.error(e)
+    }
+  }
   await loadMessages(conversationId, false)
-  scrollToBottom()
 }
 
-// 加载消息 (增加 isPolling 参数)
 const loadMessages = async (conversationId, isPolling = false) => {
   try {
     const res = await request.get('/message/list', { params: { conversationId } })
-
-    // 如果没有消息，或者数据格式不对，做个保护
     if (!res) return
-
+    
+    const oldLength = messages.value.length 
     messages.value = res.map(m => ({
       id: m.id,
       content: m.content,
@@ -213,25 +272,24 @@ const loadMessages = async (conversationId, isPolling = false) => {
       timestamp: m.createTime
     }))
 
-    // 只有在非轮询状态下（手动点击），或者用户已经在底部时，才强制滚动
-    // 这里简单处理：如果是手动点击，必滚；如果是轮询，暂时不强制滚，防止用户在看历史消息时跳动
-    if (!isPolling) {
+    if (messages.value.length > oldLength) {
       scrollToBottom()
+      
+      if (isPolling && activeConversation.value?.id === conversationId) {
+        try {
+          receiveSound.currentTime = 0; 
+          receiveSound.volume = 0.6; 
+          receiveSound.play();
+        } catch(e) {}
+      }
     }
   } catch (error) {
-    // 轮询时如果出错，只打印日志，不弹窗打扰用户
-    if (!isPolling) {
-      console.error(error)
-      ElMessage.error('Failed to load messages')
-    } else {
-      console.warn('Polling silent fail:', error)
-    }
+    if (!isPolling) console.error(error)
   }
 }
 
-// 发送消息
 const sendMessage = async () => {
-  if (!newMessage.value.trim() || !activeConversation.value) return
+  if (!newMessage.value.trim() || !activeConversation.value || activeConversation.value.isSystem) return
   const msg = {
     conversationId: activeConversation.value.id,
     content: newMessage.value.trim(),
@@ -240,74 +298,74 @@ const sendMessage = async () => {
   try {
     await request.post('/message/send', msg)
     newMessage.value = ''
+    
+    try {
+      sendSound.currentTime = 0;
+      sendSound.volume = 0.5;
+      sendSound.play();
+    } catch(e) { }
+
     await loadMessages(activeConversation.value.id, false)
-    scrollToBottom()
+    loadConversations()
   } catch (error) {
-    console.error(error)
-    ElMessage.error('Failed to send message')
+    ElMessage.error('Failed to send')
   }
 }
 
-// 滚动到底部
 const scrollToBottom = () => {
   nextTick(() => {
     if (messagesContainer.value) {
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+      setTimeout(() => {
+        if (messagesContainer.value) {
+          messagesContainer.value.scrollTo({
+            top: messagesContainer.value.scrollHeight,
+            behavior: 'smooth'
+          });
+        }
+      }, 50); 
     }
-  })
+  });
 }
 
-// 格式化时间
 const formatTime = (timestamp) => {
+  if (!timestamp) return ''
   return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-// 停止轮询
-const stopPolling = () => {
-  if (pollingTimer) {
-    clearInterval(pollingTimer)
-    pollingTimer = null
-  }
-}
-
-// 开启轮询
 const startPolling = () => {
-  // 先清除之前的，防止重复
-  stopPolling()
-
   pollingTimer = setInterval(() => {
-    // 只有当前选中了会话，才请求
+    loadConversations()
     if (activeConversation.value) {
       loadMessages(activeConversation.value.id, true)
     }
-  }, 3000)
+  }, 3000) 
 }
 
-// 生命周期：挂载
 onMounted(async () => {
   await loadConversations()
   if (route.query.conversationId) {
     selectConversation(route.query.conversationId)
   }
-  startPolling() // 开始轮询
+  startPolling()
 })
 
-// 生命周期：卸载 (离开页面时)
 onUnmounted(() => {
-  stopPolling() // 停止轮询，防止后台一直请求
+  if (pollingTimer) clearInterval(pollingTimer)
 })
 </script>
 
 <style scoped>
+/* -----------------------------------------------------------
+   CSS 样式保持不变
+   ----------------------------------------------------------- */
 .messages-page {
   display: grid;
   grid-template-columns: 320px 1fr;
-  height: 100vh; /* 确保这里填满父容器 */
+  height: 100vh;
   background: #f3f4f6;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  overflow: hidden;
 }
 
-/* 左侧对话列表 */
 .conversations-sidebar {
   background: white;
   display: flex;
@@ -320,21 +378,18 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-weight: 600;
-  font-size: 18px;
 }
 
-.new-chat-btn {
-  color: #409eff;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.sidebar-header h2 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  color: #111827;
 }
 
 .search-box {
-  padding: 12px 20px;
-  border-bottom: 1px solid #e5e7eb;
+  padding: 15px 20px;
+  border-bottom: 1px solid #f3f4f6;
 }
 
 .conversations-list {
@@ -344,11 +399,11 @@ onUnmounted(() => {
 
 .conversation-item {
   display: flex;
-  gap: 12px;
-  padding: 12px 16px;
+  padding: 15px 20px;
+  gap: 15px;
   cursor: pointer;
-  border-bottom: 1px solid #f1f5f9;
-  transition: background-color 0.2s ease;
+  border-bottom: 1px solid #f9fafb;
+  transition: all 0.2s;
   align-items: center;
 }
 
@@ -357,8 +412,8 @@ onUnmounted(() => {
 }
 
 .conversation-item.active {
-  background-color: #e0f0ff;
-  border-left: 4px solid #409eff;
+  background-color: #eff6ff;
+  border-left: 4px solid #3b82f6;
 }
 
 .conversation-info {
@@ -369,14 +424,14 @@ onUnmounted(() => {
 .conversation-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
   margin-bottom: 4px;
 }
 
 .conversation-name {
   font-weight: 600;
-  font-size: 14px;
-  color: #1f2937;
+  font-size: 15px;
+  color: #111827;
+  margin: 0;
 }
 
 .conversation-time {
@@ -387,22 +442,23 @@ onUnmounted(() => {
 .conversation-preview {
   font-size: 13px;
   color: #6b7280;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  margin: 0;
 }
 
 .conversation-meta {
   display: flex;
-  gap: 6px;
+  justify-content: space-between;
   align-items: center;
-  margin-top: 4px;
+  margin-top: 5px;
 }
 
-/* 右侧聊天区域 */
 .chat-area {
   display: flex;
   flex-direction: column;
+  height: 100vh;
   background: #f8f9fa;
 }
 
@@ -411,7 +467,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #6b7280;
+  color: #9ca3af;
 }
 
 .no-conversation-content {
@@ -419,9 +475,8 @@ onUnmounted(() => {
 }
 
 .no-conversation-content .el-icon {
-  font-size: 64px;
-  color: #cbd5e1;
-  margin-bottom: 12px;
+  font-size: 50px;
+  margin-bottom: 15px;
 }
 
 .chat-container {
@@ -429,75 +484,73 @@ onUnmounted(() => {
   flex-direction: column;
   height: 100%;
   background: white;
-  box-shadow: inset 0 0 0 1px #e5e7eb;
 }
 
 .chat-header {
-  padding: 16px 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  padding: 15px 25px;
   border-bottom: 1px solid #e5e7eb;
-  background: #f9fafb;
+  background: #fff;
 }
 
 .chat-user-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 15px;
 }
 
 .user-details h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
-  color: #1f2937;
 }
 
 .user-status {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   color: #6b7280;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .status-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  display: inline-block;
 }
 
-.status-dot.online {
-  background-color: #10b981;
-}
+.status-dot.online { background: #10b981; }
+.status-dot.offline { background: #9ca3af; }
 
-.status-dot.offline {
-  background-color: #9ca3af;
-}
-
-.chat-actions {
+.chat-product-banner {
+  padding: 10px 25px;
+  background: #f0f7ff;
+  border-bottom: 1px solid #e0e7ff;
   display: flex;
-  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
 }
 
-/* 消息列表 */
+.item-name-text {
+  font-weight: 600;
+  color: #2563eb;
+  font-size: 14px;
+}
+
 .messages-container {
   flex: 1;
-  padding: 20px;
+  padding: 25px;
   overflow-y: auto;
+  background: #f3f4f6;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  background: #f3f4f6;
+  gap: 15px;
 }
 
 .message-wrapper {
   display: flex;
-  max-width: 70%;
-  gap: 8px;
+  max-width: 75%;
+  gap: 10px;
 }
 
 .message-wrapper.sent {
@@ -505,79 +558,49 @@ onUnmounted(() => {
   flex-direction: row-reverse;
 }
 
-.message-wrapper.received {
-  align-self: flex-start;
-  flex-direction: row;
-}
-
 .message-content {
   padding: 12px 16px;
-  border-radius: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  word-break: break-word;
-  max-width: 100%;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-.message-wrapper.sent .message-content {
-  background-color: #409eff;
+.sent .message-content {
+  background: #3b82f6;
   color: white;
 }
 
-.message-wrapper.received .message-content {
-  background-color: #f1f5f9;
+.received .message-content {
+  background: white;
   color: #1f2937;
 }
 
-.message-avatar {
-  align-self: flex-end;
+.time-divider {
+  text-align: center;
+  font-size: 12px;
+  color: #9ca3af;
+  margin: 10px 0;
 }
 
-/* 消息输入 */
 .message-input-container {
-  padding: 16px 20px;
+  padding: 20px 25px;
+  background: #fff;
   border-top: 1px solid #e5e7eb;
   display: flex;
-  gap: 12px;
-  align-items: flex-end;
-  background: #f9fafb;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .input-actions {
   display: flex;
-  gap: 6px;
-}
-
-.action-btn {
-  color: #6b7280;
-}
-
-.action-btn:hover {
-  color: #409eff;
-}
-
-.message-input-container :deep(.el-textarea) {
-  flex: 1;
-}
-
-.message-input-container :deep(.el-textarea__inner) {
-  border-radius: 12px;
-  resize: none;
+  gap: 15px;
 }
 
 .send-btn {
-  padding: 10px 18px;
-  border-radius: 12px;
+  align-self: flex-end;
+  border-radius: 10px;
 }
 
-/* 滚动条 */
-.conversations-list::-webkit-scrollbar,
-.messages-container::-webkit-scrollbar {
-  width: 6px;
-}
-
-.conversations-list::-webkit-scrollbar-thumb,
-.messages-container::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 3px;
-}
+.messages-container::-webkit-scrollbar { width: 5px; }
+.messages-container::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
 </style>

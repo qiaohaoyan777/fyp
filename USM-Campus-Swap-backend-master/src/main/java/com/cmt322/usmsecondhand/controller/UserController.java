@@ -49,7 +49,7 @@ public class UserController {
         String studentId = userRegisterRequest.getStudentId();
         String school = userRegisterRequest.getSchool();
         String phone = userRegisterRequest.getPhone();
-        if (StringUtils.isAnyBlank(username, userAccount, userPassword, checkPassword,usmEmail,campus,studentId,school,phone)) {
+        if (StringUtils.isAnyBlank(username, userAccount, userPassword, checkPassword,usmEmail,campus,school)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
         long result = userService.userRegister(username, userAccount, userPassword, checkPassword,usmEmail,campus,studentId,school,phone);

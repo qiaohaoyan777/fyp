@@ -1,23 +1,14 @@
 import axios from 'axios'
-
-
-// const request = axios.create({
-//     baseURL: 'http://localhost:8081/api',
-//     timeout: 10000,
-//     withCredentials: true,
-//     headers: {
-//         'Content-Type': 'application/json;charset=utf-8'
-//     }
-// })
+import router from '@/router'; // 🌟 确保路径对应你的路由定义文件
 
 const request = axios.create({
-    baseURL: 'https://usm-compus-swap.duckdns.org/api',
+    baseURL: 'http://localhost:8081/api',
     timeout: 10000,
-    withCredentials: true, // 保持 true，这配合你后端 yml 里的 secure: true
+    withCredentials: true,
     headers: {
-        'Content-Type': 'application/json;charset=utf-8'
-    }
-})
+         'Content-Type': 'application/json;charset=utf-8'
+     }
+ })
 
 // Request interceptor - Add logging
 request.interceptors.request.use(
@@ -55,9 +46,21 @@ request.interceptors.response.use(
 
         // Business failure - Password error, etc.
         if (res.code === 40100) {
-            localStorage.removeItem('user');
-            router.push('/login');
             console.warn('User not logged in or password incorrect')
+            localStorage.removeItem('user');
+            
+            // 🌟 终极核心修复：同时检查路由实例和真实的浏览器地址栏！
+            const currentVuePath = router.currentRoute?.value?.path;
+            const currentUrl = window.location.href;
+            
+            // 只要当前的网址里不包含 'login'，才去执行跳转
+            if (currentVuePath !== '/login' && !currentUrl.includes('/login')) {
+                // 用 replace 代替 push，这样不会在浏览器历史里产生无数个废记录
+                router.replace('/login');
+            }
+            
+            // 遇到未登录直接拒绝，把错误抛给组件，打断后续请求
+            return Promise.reject(new Error(res.message || 'Please login first'));
         }
 
         // Throw business error

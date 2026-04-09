@@ -70,7 +70,7 @@
                     placeholder="your.email@student.usm.my"
                     type="email"
                 />
-                <p class="form-hint">Must be a valid USM email address ending with @usm.my</p>
+                <p class="form-hint">Must be a valid USM email address ending with @student.usm.my</p>
               </el-form-item>
             </div>
 
@@ -118,12 +118,22 @@
                   </el-select>
                 </el-form-item>
 
-                <el-form-item label="School/Faculty" prop="school" class="form-item">
-                  <el-input
-                      v-model="form.school"
-                      placeholder="e.g., School of Computer Sciences"
-                  />
-                </el-form-item>
+                <el-form-item label="School" prop="school">
+          <el-select 
+            v-model="form.school" 
+            placeholder="Please select your school" 
+            style="width: 100%" 
+            clearable
+            filterable
+          >
+            <el-option
+              v-for="item in schoolList"
+              :key="item"
+              :label="item"
+              :value="item"
+            />
+          </el-select>
+        </el-form-item>
               </div>
 
               <div class="form-row">
@@ -133,7 +143,6 @@
                       placeholder="Enter your student ID"
                       maxlength="20"
                   />
-                  <p class="form-hint">Optional, but recommended for verification</p>
                 </el-form-item>
 
                 <el-form-item label="Phone Number" prop="phone" class="form-item">
@@ -158,7 +167,7 @@
               <el-button
                   type="primary"
                   size="large"
-                  @click="handleRegister"
+                  @click="dialogVisible = true" 
                   :loading="loading"
                   class="register-btn"
                   :disabled="!agreeTerms"
@@ -172,6 +181,30 @@
       </div>
     </div>
   </div>
+  <el-dialog
+      v-model="dialogVisible"
+      title="Please Confirm Your Information"
+      width="400px"
+    >
+      <div style="line-height: 1.8; font-size: 16px;">
+        <p><strong>Account:</strong> {{ form.userAccount }}</p>
+        <p><strong>School:</strong> {{ form.school }}</p>
+        <p><strong>Email:</strong> {{ form.usmEmail }}</p>
+        <p style="color: #E6A23C; margin-top: 15px; font-size: 14px;">
+          * Please ensure all information is correct before proceeding.
+        </p>
+      </div>
+      
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="router.push('/login')">Cancel</el-button>
+      
+          <el-button type="primary" @click="handleRegister">
+            Confirm & Register
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
 </template>
 
 <script setup>
@@ -185,8 +218,10 @@ const router = useRouter()
 const formRef = ref()
 const loading = ref(false)
 const agreeTerms = ref(false)
-
+// 控制确认弹窗显示/隐藏的开关，默认是 false（隐藏）
+const dialogVisible = ref(false)
 // 表单数据
+
 const form = reactive({
   username: '',
   userAccount: '',
@@ -253,9 +288,10 @@ const rules = reactive({
     { required: true, message: 'Please select campus', trigger: 'change' }
   ],
   school: [
-    { required: true, message: 'Please enter school/faculty', trigger: 'blur' }
+    { required: true, message: 'Please enter school/faculty', trigger: 'change' }
   ],
   studentId: [
+    { required: true, message: 'Please enter your Student ID', trigger: 'blur' },
     {
       validator: (rule, value, callback) => {
         if (value && value.length < 6) {
@@ -286,43 +322,56 @@ const rules = reactive({
     }
   ]
 })
-
+const schoolList = [
+  'School of Computer Sciences',
+  'School of Management',
+  'School of Communication',
+  'School of Biological Sciences',
+  'School of Physics',
+  'School of Chemical Sciences',
+  'School of Mathematical Sciences',
+  'School of Educational Studies',
+  'School of Languages, Literacies and Translation',
+  'School of Arts',
+  'School of Humanities',
+  'School of Social Sciences',
+  'Other (Others)'
+]
 const handleRegister = async () => {
-  if (!formRef.value) return
+    console.log("【追踪 1】✅ 按钮被点击了，成功进入注册函数！")
+    try {
+      console.log("【追踪 2】⏳ 准备校验表单...")
+      // 1. 校验表单
+      await formRef.value.validate()
+      
+      console.log("【追踪 3】🎉 表单校验完美通过！准备整理数据...")
+      // 2. 构造数据 
+      const requestData = {
+        ...form, 
+        userName: form.username,
+        phone: form.phone ? `+60${form.phone}` : null
+      }
 
-  try {
-    loading.value = true
-    // 1. 校验表单
-    await formRef.value.validate()
+      console.log("【追踪 4】🚀 准备发送给后端，数据为:", requestData)
+      // 3. 发送真实请求
+      await userRegister(requestData)
 
-    // 2. 构造数据 (处理字段名对应和手机号前缀)
-    // 这里的 form 是 reactive 对象，直接访问属性，不需要 .value
-    const requestData = {
-      ...form,
-      userName: form.username,
-      phone: form.phone ? `+60${form.phone}` : ''
+      console.log("【追踪 5】✅ 后端保存成功！准备关弹窗和跳转...")
+      // 4. 成功处理
+      dialogVisible.value = false
+      ElMessage.success('Registration successful! Please sign in.')
+      router.push('/login')
+
+    } catch (error) {
+      console.error('【🚨 抓到错误啦】Register Error:', error)
+      // 5. 错误处理
+      if (error.errorFields) {
+        ElMessage.error('Please fill in all required fields correctly')
+      } else {
+        ElMessage.error(error.message || 'Registration failed. Please try again.')
+      }
     }
-
-    // 3. 发送真实请求
-    await userRegister(requestData)
-
-    // 4. 成功处理
-    ElMessage.success('Registration successful! Please sign in.')
-    router.push('/login')
-
-  } catch (error) {
-    console.error('Register Error:', error)
-    // 5. 错误处理
-    if (error.errorFields) {
-      ElMessage.error('Please fill in all required fields correctly')
-    } else {
-      // 显示后端返回的具体错误 (比如 "账号已存在")
-      ElMessage.error(error.message || 'Registration failed. Please try again.')
-    }
-  } finally {
-    loading.value = false
   }
-}
 </script>
 
 <style scoped>

@@ -42,12 +42,13 @@
 
           <div class="item-info">
             <h3 class="item-title" @click="$router.push(`/goods/${item.id}`)">{{ item.title }}</h3>
-            <p class="item-price">RM{{ item.price }}</p>
+            <p class="item-price">RM {{ item.price?.toFixed(2) }}</p>
             <div class="item-meta">
-              <span class="campus">{{ item.campus }}</span>
+              <span class="campus">
+                <el-icon><Location /></el-icon> {{ item.campus }}
+              </span>
               <span class="views">
-                <el-icon><View /></el-icon>
-                {{ item.viewCount }}
+                <el-icon><View /></el-icon> {{ item.viewCount }}
               </span>
             </div>
             <div class="seller-info">
@@ -58,12 +59,31 @@
 
           <div class="item-actions-bottom">
             <el-button type="primary" @click="contactSeller(item)" class="contact-btn">
-              <el-icon><ChatDotRound /></el-icon>
-              Contact Seller
+              <el-icon style="margin-right: 5px;"><ChatDotRound /></el-icon>
+              Contact
             </el-button>
             <el-button @click="$router.push(`/goods/${item.id}`)" class="view-btn">
-              View Details
+              Details
             </el-button>
+          </div>
+        </div>
+      </div>
+
+      <div class="recommended-section" v-if="recommendedItems.length > 0">
+        <h2>Recommended for You</h2>
+        <div class="recommended-grid">
+          <div 
+            v-for="rec in recommendedItems" 
+            :key="rec.id" 
+            class="recommended-item"
+            @click="$router.push(`/goods/${rec.id}`)"
+          >
+            <img :src="rec.coverImage" class="recommended-image" />
+            <div class="recommended-info">
+              <h4 class="truncate">{{ rec.title }}</h4>
+              <p class="recommended-price">RM {{ rec.price?.toFixed(2) }}</p>
+              <p class="recommended-campus">{{ rec.campus }}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -75,22 +95,17 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Star, ShoppingCart, Close, ChatDotRound, View } from '@element-plus/icons-vue'
-import myAxios from "@/plugins/request.js"; // 1. 引入 Axios
+import { Star, ShoppingCart, Close, ChatDotRound, View, Location } from '@element-plus/icons-vue'
+import myAxios from "@/plugins/request.js"
 
 const router = useRouter()
-
-// 2. 将初始值设为空数组
 const wishlistItems = ref([])
 const recommendedItems = ref([])
 
-// 3. 加载收藏列表 (连接后端)
+// 加载收藏列表
 const loadWishlist = async () => {
   try {
-    // 1. res 现在直接就是后端返回的收藏商品数组（脱壳后）
     const res = await myAxios.get('/wishlist/list')
-
-    // 2. 拦截器已处理 code !== 0 的情况，只需判断 res 是否为数组
     if (res && Array.isArray(res)) {
       wishlistItems.value = res.map(item => ({
         id: item.goodsId,
@@ -105,30 +120,34 @@ const loadWishlist = async () => {
       }))
     }
   } catch (error) {
-    // 3. 拦截器会自动通过 ElMessage 报错，此处仅需处理逻辑
     console.error('Failed to load wishlist:', error)
   }
 }
 
-// 4. 加载推荐商品 (可选)
+// 🌟 修复：加载推荐商品 (对接后端新写的 /recommend 接口)
 const loadRecommendations = async () => {
   try {
+    // 路径与 GoodsController 中的新接口保持一致
     const res = await myAxios.get('/goods/recommend')
-    if (res.code === 0) {
-      recommendedItems.value = res.data
+    
+    // 同样需要进行数据脱壳（如果拦截器已经脱壳，res 就是数组）
+    const data = res.records || res 
+    if (Array.isArray(data)) {
+      recommendedItems.value = data.slice(0, 4) // 只取前4个推荐，避免太乱
     }
   } catch (e) {
-    console.error(e)
+    // 如果后端没写好推荐算法，这里会静默失败，不弹出红色报错
+    console.warn('Recommended goods not available:', e)
   }
 }
 
-// 5. 初始化加载
+// 初始化加载
 onMounted(() => {
   loadWishlist()
   loadRecommendations()
 })
 
-// 6. 从收藏移除 (连接后端)
+// 从收藏移除
 const removeFromWishlist = async (itemId) => {
   try {
     await ElMessageBox.confirm(
@@ -137,25 +156,20 @@ const removeFromWishlist = async (itemId) => {
         { confirmButtonText: 'Remove', cancelButtonText: 'Cancel', type: 'warning' }
     )
 
-    // 4. 调用后端删除接口（拦截器处理成功/失败）
     await myAxios.post('/wishlist/remove', { goodsId: itemId })
-
-    // 5. 只要没有抛出错误，就代表成功
     wishlistItems.value = wishlistItems.value.filter(item => item.id !== itemId)
-    ElMessage.success('Item removed from wishlist')
+    ElMessage.success('Item removed')
   } catch (error) {
     if (error !== 'cancel') console.error(error)
   }
 }
 
-// 7. 联系卖家 (修复跳转逻辑)
+// 联系卖家
 const contactSeller = (item) => {
-  // 必须传递 targetUserId，否则聊天页面不知道跟谁聊
   if (!item.sellerId) {
-    ElMessage.warning('Cannot contact this seller currently.')
+    ElMessage.warning('Seller information not found.')
     return
   }
-
   router.push({
     path: '/messages',
     query: { targetUserId: item.sellerId }
@@ -182,19 +196,13 @@ const contactSeller = (item) => {
   color: #1f2937;
 }
 
-.page-header p {
-  color: #6b7280;
-  font-size: 16px;
-  margin: 0;
-}
-
 /* 空状态 */
 .empty-wishlist {
   text-align: center;
   padding: 80px 20px;
   background: white;
   border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
 }
 
 .empty-content .el-icon {
@@ -203,21 +211,10 @@ const contactSeller = (item) => {
   margin-bottom: 20px;
 }
 
-.empty-content h3 {
-  font-size: 20px;
-  color: #374151;
-  margin-bottom: 8px;
-}
-
-.empty-content p {
-  color: #6b7280;
-  margin-bottom: 24px;
-}
-
 /* 收藏商品网格 */
 .wishlist-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 24px;
   margin-bottom: 60px;
 }
@@ -226,51 +223,36 @@ const contactSeller = (item) => {
   background: white;
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   transition: all 0.3s ease;
   display: flex;
   flex-direction: column;
 }
 
 .wishlist-item:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  transform: translateY(-5px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
 }
 
 .item-image {
   position: relative;
-  height: 200px;
-  overflow: hidden;
+  height: 180px;
+  background: #f9fafb;
 }
 
 .item-image img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
-}
-
-.item-actions {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-}
-
-.remove-btn {
-  background: rgba(239, 68, 68, 0.9);
-  border: none;
-}
-
-.remove-btn:hover {
-  background: #dc2626;
+  object-fit: contain;
 }
 
 .item-status {
   position: absolute;
-  top: 12px;
-  left: 12px;
+  top: 10px;
+  left: 10px;
   padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: 6px;
+  font-size: 11px;
   color: white;
   background: #10b981;
 }
@@ -281,21 +263,20 @@ const contactSeller = (item) => {
 }
 
 .item-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
-  margin-bottom: 8px;
-  color: #1f2937;
+  margin-bottom: 6px;
+  color: #111827;
   cursor: pointer;
-  line-height: 1.4;
-}
-
-.item-title:hover {
-  color: #409eff;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .item-price {
   font-size: 18px;
-  font-weight: bold;
+  font-weight: 700;
   color: #ef4444;
   margin-bottom: 12px;
 }
@@ -303,123 +284,88 @@ const contactSeller = (item) => {
 .item-meta {
   display: flex;
   justify-content: space-between;
-  align-items: center;
   margin-bottom: 12px;
-  font-size: 13px;
+  font-size: 12px;
   color: #6b7280;
-}
-
-.item-meta .views {
-  display: flex;
-  align-items: center;
-  gap: 4px;
 }
 
 .seller-info {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 16px;
+  border-top: 1px dashed #f3f4f6;
+  padding-top: 12px;
 }
 
 .seller-avatar {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  object-fit: cover;
-}
-
-.seller-name {
-  font-size: 13px;
-  color: #6b7280;
 }
 
 .item-actions-bottom {
   padding: 0 16px 16px;
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
-.contact-btn, .view-btn {
-  flex: 1;
-}
+.contact-btn { flex: 1.5; }
+.view-btn { flex: 1; }
 
-/* 推荐商品 */
+/* 推荐区域 */
 .recommended-section {
-  border-top: 1px solid #e5e7eb;
+  margin-top: 60px;
+  border-top: 2px solid #f3f4f6;
   padding-top: 40px;
 }
 
 .recommended-section h2 {
-  font-size: 24px;
-  margin-bottom: 20px;
-  color: #1f2937;
+  font-size: 22px;
+  margin-bottom: 24px;
+  color: #111827;
   text-align: center;
 }
 
 .recommended-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 20px;
 }
 
 .recommended-item {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
+  background: white;
+  border-radius: 10px;
+  padding: 12px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  text-align: center;
+  border: 1px solid #f3f4f6;
+  transition: transform 0.2s;
 }
 
 .recommended-item:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: scale(1.02);
 }
 
 .recommended-image {
   width: 100%;
-  height: 120px;
-  object-fit: cover;
-  border-radius: 6px;
-  margin-bottom: 12px;
+  height: 140px;
+  object-fit: contain;
+  margin-bottom: 10px;
 }
 
-.recommended-info h4 {
-  margin: 0 0 8px 0;
-  font-size: 14px;
-  color: #1f2937;
-  line-height: 1.4;
+.truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
 }
 
 .recommended-price {
-  font-size: 16px;
-  font-weight: 600;
   color: #ef4444;
-  margin: 0 0 4px 0;
+  font-weight: bold;
 }
 
 .recommended-campus {
-  font-size: 12px;
-  color: #6b7280;
-  margin: 0;
-}
-
-@media (max-width: 768px) {
-  .wishlist-page {
-    padding: 15px;
-  }
-
-  .wishlist-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .item-actions-bottom {
-    flex-direction: column;
-  }
-
-  .recommended-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  font-size: 11px;
+  color: #9ca3af;
 }
 </style>

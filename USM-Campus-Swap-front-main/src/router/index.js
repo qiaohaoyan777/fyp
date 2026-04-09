@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useUserStore } from '@/stores/user' // 1. 引入 Store
+import { useUserStore } from '@/stores/user' 
+import { ElMessage } from 'element-plus' 
 import Home from '../views/Home.vue'
 
 const routes = [
@@ -11,7 +12,8 @@ const routes = [
     {
         path: '/goods/:id',
         name: 'GoodsDetail',
-        component: () => import('../views/GoodsDetails.vue')
+        component: () => import('../views/GoodsDetails.vue'),
+        meta: { requiresAuth: true } 
     },
     {
         path: '/sell',
@@ -26,11 +28,17 @@ const routes = [
         meta: {requiresAuth: true}
     },
     {
-        path: '/payment/:orderId?', // 使用动态 ID 获取订单
+        path: '/payment/:orderId?', 
         name: 'Payment',
         component: () => import('../views/Payment.vue'),
         props: true,
-        meta: { requiresAuth: true } // 只有登录用户可以支付
+        meta: { requiresAuth: true } 
+    },
+    {
+        path: '/card-payment',
+        name: 'CardPayment',
+        component: () => import('../views/CardPayment.vue'),
+        meta: { requiresAuth: true }
     },
     {
         path: '/my-wishlist',
@@ -67,6 +75,11 @@ const routes = [
         component: () => import('../views/Login.vue')
     },
     {
+        path: '/register',
+        name: 'Register',
+        component: () => import('../views/Register.vue')
+    },
+    {
         path: '/admin/goods',
         name: 'AdminGoods',
         component: () => import('../views/AdminGoodsView.vue'),
@@ -86,68 +99,58 @@ const routes = [
         name: 'AdminUsers',
         component: () => import('../views/AdminUserView.vue'),
         meta: { requiresAuth: true, requiresAdmin: true }
-    },
-    {
-        path: '/register',
-        name: 'Register',
-        component: () => import('../views/Register.vue')
     }
 ]
 
 const router = createRouter({
     history: createWebHistory(),
     routes,
-    // 优化体验：每次跳转页面，自动滚动到顶部
     scrollBehavior() {
         return { top: 0 }
     }
 })
 
-// 3. 全局前置守卫 (核心逻辑)
+// 3. 全局前置守卫
 router.beforeEach(async (to, from, next) => {
     const userStore = useUserStore()
 
-    // 1. 如果 Pinia 里没有用户信息 (说明是刚刷新，或者真的没登录)
-    if (!userStore.userInfo) {
+    // 🌟 核心修复区：定义白名单，如果是去登录或注册，千万别再发请求查用户信息了！
+    const whiteList = ['/login', '/register'];
+
+    // 1. 尝试获取用户信息 (只在没有 userInfo，且【不在白名单】时才查)
+    if (!userStore.userInfo && !whiteList.includes(to.path)) {
         try {
-            // 🔥 关键修改：去掉 document.cookie 的判断
-            // 直接尝试去后端拉取用户信息。
-            // 如果后端有 Session，这里就会成功，Pinia 就有值了。
             await userStore.fetchCurrentUser()
         } catch (error) {
-            // 如果报错（比如 401 未登录），说明真的没登录，或者 Session 过期了
-            // 这里什么都不用做，userStore.userInfo 依然是 null
             console.warn('Session check failed or user not logged in')
         }
     }
 
-    // 2. 鉴权逻辑
+    // 2. 鉴权逻辑：如果目标页面需要登录
     if (to.meta.requiresAuth) {
-        // 如果需要登录，且经过上面的尝试后，依然没有用户信息
         if (!userStore.userInfo) {
-            next('/login') // 踢回登录页
+            ElMessage.warning('Please login first to access this feature.')
+            next({ path: '/login', query: { redirect: to.fullPath } }) 
             return
         }
     }
 
+    // 管理员权限校验
     if (to.meta.requiresAdmin) {
-        // 如果不是管理员 (假设 role 为 1 是管理员)
         if (userStore.userInfo?.userRole !== 1) {
-            // 注意：这里的字段名要对应你后端返回的 role 字段
             ElMessage.error('Access Denied: Admin privileges required')
-            next('/') // 踢回首页
+            next('/') 
             return
         }
     }
 
-    // 3. 针对登录页的优化
-    // 如果用户已经登录了，还想去访问 /login，直接把他踢回主页或上次的页面
-    if (to.path === '/login' && userStore.userInfo) {
+    // 3. 防止已登录用户重复访问登录页
+    if (whiteList.includes(to.path) && userStore.userInfo) {
         next('/')
         return
     }
 
-    // 放行
+    // 4. 绿灯放行
     next()
 })
 

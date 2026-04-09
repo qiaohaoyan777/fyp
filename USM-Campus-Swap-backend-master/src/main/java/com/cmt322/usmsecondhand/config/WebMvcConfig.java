@@ -19,7 +19,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
         // 确保 uploadDir 结尾有斜杠，防止路径拼接错误
         String path = uploadDir.endsWith(File.separator) ? uploadDir : uploadDir + File.separator;
 
-        registry.addResourceHandler("/images/**")
+        // 👇 重点看这里：在括号里加上 "/uploads/**"，让它同时支持两种路径！
+        registry.addResourceHandler("/images/**", "/uploads/**")
                 .addResourceLocations("file:" + path);
     }
 

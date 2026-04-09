@@ -1,5 +1,6 @@
 <template>
   <div class="header">
+    
     <div class="header-left">
       <router-link to="/" class="logo">
         <el-icon><Shop /></el-icon>
@@ -37,6 +38,7 @@
           v-model="searchKeyword"
           placeholder="Search products..."
           class="search-input"
+          size="large"
           @keyup.enter="handleSearch"
           clearable
       >
@@ -48,20 +50,35 @@
 
     <div class="header-right">
       <div class="action-buttons">
-        <el-button icon="ChatDotRound" @click="goMessages" circle></el-button>
-        <router-link to="/sell">
-          <el-button class="sell-button" icon="Plus">Sell</el-button>
+        
+        <el-badge 
+          :value="userStore.totalUnread" 
+          :max="99" 
+          :hidden="!userStore.totalUnread || userStore.totalUnread === 0"
+          class="message-badge"
+        >
+          <el-button @click="goMessages" circle size="large">
+            <el-icon :size="20"><ChatDotRound /></el-icon>
+          </el-button>
+        </el-badge>
+        
+        <router-link to="/sell" style="text-decoration: none;">
+          <el-button class="sell-button" size="large">
+            <el-icon :size="18"><Plus /></el-icon>
+            <span style="font-size: 16px; margin-left: 6px; font-weight: bold;">Sell</span>
+          </el-button>
         </router-link>
       </div>
 
       <div class="auth-section">
         <template v-if="!isLogin">
-          <el-button link @click="router.push('/login')">Login</el-button>
+          <el-button link @click="router.push('/login')" style="font-size: 16px;">Login</el-button>
         </template>
+        
         <template v-else>
           <el-dropdown trigger="click">
             <span class="user-avatar-wrapper">
-              <el-avatar :size="32" :src="userAvatar" />
+              <el-avatar :size="45" :src="userAvatar" />
               <el-icon><ArrowDown /></el-icon>
             </span>
             <template #dropdown>
@@ -74,11 +91,12 @@
         </template>
       </div>
     </div>
+
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue' // ★ 1. 引入 watch
+import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import {
@@ -98,21 +116,16 @@ const isLogin = computed(() => !!userStore.userInfo)
 const userAvatar = computed(() => userStore.userInfo?.avatarUrl || 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png')
 const userName = computed(() => userStore.userInfo?.username || 'User')
 
-// ★ 2. 修复后的搜索逻辑
 const handleSearch = () => {
   const keyword = searchKeyword.value.trim()
-
-  // 跳转到首页，并带上查询参数
   router.push({
     path: '/',
     query: {
-      keyword: keyword || undefined // 如果为空就不传
+      keyword: keyword || undefined 
     }
   })
 }
 
-// ★ 3. 监听路由变化，保持搜索框内容同步
-// (例如：用户点了浏览器的后退按钮，搜索框里的字也应该变回去)
 watch(
     () => route.query.keyword,
     (newVal) => {
@@ -165,7 +178,6 @@ const goMessages = () => router.push('/messages')
   flex: 1;
 }
 
-/* 搜索栏样式优化 */
 .header-center {
   flex: 1;
   display: flex;
@@ -174,20 +186,30 @@ const goMessages = () => router.push('/messages')
   min-width: 200px;
 }
 
-/* ★ 4. 确保这里没有多余的嵌套，宽度才能生效 */
 .search-input {
   width: 100%;
-  max-width: 400px; /* 稍微加宽一点，视觉更舒适 */
+  max-width: 400px; 
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: 30px; 
   flex-shrink: 0;
 }
 
-.action-buttons { display: flex; align-items: center; gap: 10px; }
+.action-buttons { 
+  display: flex; 
+  align-items: center; 
+  gap: 15px; 
+}
+
+/* 🌟 防止红点错位 */
+.message-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
 .sell-button {
   background-color: #ff5722;
@@ -195,7 +217,12 @@ const goMessages = () => router.push('/messages')
   color: #fff;
 }
 
-.user-avatar-wrapper { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.user-avatar-wrapper { 
+  display: flex; 
+  align-items: center; 
+  gap: 5px; 
+  cursor: pointer; 
+}
 
 @media (max-width: 1100px) {
   .logo-text { display: none; }

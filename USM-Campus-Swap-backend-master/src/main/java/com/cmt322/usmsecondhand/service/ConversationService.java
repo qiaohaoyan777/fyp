@@ -11,4 +11,6 @@ public interface ConversationService extends IService<Conversation> {
 
     List<Conversation> listMy(Long userId);
 
+    Long openSystemConversation(Long userId);
+
 }
