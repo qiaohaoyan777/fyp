@@ -1,7 +1,6 @@
 <template>
   <div class="register-page">
     <div class="register-container">
-      <!-- 左侧图片 -->
       <div class="register-left">
         <div class="welcome-content">
           <h1>Join USM Campus Swap</h1>
@@ -23,7 +22,6 @@
         </div>
       </div>
 
-      <!-- 右侧表单 -->
       <div class="register-right">
         <div class="form-container">
           <div class="form-header">
@@ -40,7 +38,6 @@
               class="register-form"
               size="large"
           >
-            <!-- 基本信息 -->
             <div class="form-section">
               <h3 class="section-title">Account Information</h3>
 
@@ -64,17 +61,37 @@
                 </el-form-item>
               </div>
 
-              <el-form-item label="USM Email" prop="usmEmail" class="form-item">
-                <el-input
-                    v-model="form.usmEmail"
-                    placeholder="your.email@student.usm.my"
-                    type="email"
-                />
-                <p class="form-hint">Must be a valid USM email address ending with @student.usm.my</p>
-              </el-form-item>
+              <div class="form-row">
+                <el-form-item label="USM Email" prop="usmEmail" class="form-item">
+                  <el-input
+                      v-model="form.usmEmail"
+                      placeholder="your.email@student.usm.my"
+                      type="email"
+                  />
+                </el-form-item>
+
+                <el-form-item label="Verification Code" prop="emailCode" class="form-item">
+                  <div style="display: flex; gap: 10px;">
+                    <el-input
+                        v-model="form.emailCode"
+                        placeholder="6-digit code"
+                        maxlength="6"
+                    />
+                    <el-button 
+                      type="primary" 
+                      @click="sendVerificationCode" 
+                      :disabled="countdown > 0"
+                      :loading="sendingCode"
+                      style="min-width: 120px;"
+                    >
+                      {{ countdown > 0 ? `${countdown}s` : 'Send Code' }}
+                    </el-button>
+                  </div>
+                </el-form-item>
+              </div>
+              <p class="form-hint" style="margin-top: -10px; margin-bottom: 20px;">Must be a valid USM email address ending with @student.usm.my</p>
             </div>
 
-            <!-- 密码设置 -->
             <div class="form-section">
               <h3 class="section-title">Security</h3>
 
@@ -101,7 +118,6 @@
               </div>
             </div>
 
-            <!-- 个人信息 -->
             <div class="form-section">
               <h3 class="section-title">Personal Information</h3>
 
@@ -119,21 +135,21 @@
                 </el-form-item>
 
                 <el-form-item label="School" prop="school">
-          <el-select 
-            v-model="form.school" 
-            placeholder="Please select your school" 
-            style="width: 100%" 
-            clearable
-            filterable
-          >
-            <el-option
-              v-for="item in schoolList"
-              :key="item"
-              :label="item"
-              :value="item"
-            />
-          </el-select>
-        </el-form-item>
+                  <el-select 
+                    v-model="form.school" 
+                    placeholder="Please select your school" 
+                    style="width: 100%" 
+                    clearable
+                    filterable
+                  >
+                    <el-option
+                      v-for="item in schoolList"
+                      :key="item"
+                      :label="item"
+                      :value="item"
+                    />
+                  </el-select>
+                </el-form-item>
               </div>
 
               <div class="form-row">
@@ -158,7 +174,6 @@
               </div>
             </div>
 
-            <!-- 协议和注册按钮 -->
             <div class="form-actions">
               <el-checkbox v-model="agreeTerms" class="terms-checkbox">
                 I agree to the <a href="#" class="link">Terms of Service</a> and <a href="#" class="link">Privacy Policy</a>
@@ -181,6 +196,7 @@
       </div>
     </div>
   </div>
+
   <el-dialog
       v-model="dialogVisible"
       title="Please Confirm Your Information"
@@ -197,9 +213,8 @@
       
       <template #footer>
         <span class="dialog-footer">
-          <el-button @click="router.push('/login')">Cancel</el-button>
-      
-          <el-button type="primary" @click="handleRegister">
+          <el-button @click="dialogVisible = false">Cancel</el-button>
+          <el-button type="primary" @click="handleRegister" :loading="loading">
             Confirm & Register
           </el-button>
         </span>
@@ -212,15 +227,17 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Check, User } from '@element-plus/icons-vue'
-import { userRegister } from '@/api/user' // 1. 确保引入 API
+import { userRegister, sendEmailCode } from '@/api/user' // 👇 确保你的 api/user.js 导出了 sendEmailCode
 
 const router = useRouter()
 const formRef = ref()
 const loading = ref(false)
 const agreeTerms = ref(false)
-// 控制确认弹窗显示/隐藏的开关，默认是 false（隐藏）
 const dialogVisible = ref(false)
-// 表单数据
+
+// 👇 验证码相关的状态
+const sendingCode = ref(false)
+const countdown = ref(0)
 
 const form = reactive({
   username: '',
@@ -228,13 +245,14 @@ const form = reactive({
   userPassword: '',
   checkPassword: '',
   usmEmail: '',
+  emailCode: '', // 👇 新增验证码字段
   campus: '',
   studentId: '',
   school: '',
   phone: ''
 })
 
-// 验证规则 (保持不变)
+// 验证规则
 const rules = reactive({
   username: [
     { required: true, message: 'Please enter your User name', trigger: 'blur' },
@@ -249,6 +267,25 @@ const rules = reactive({
       trigger: 'blur'
     }
   ],
+  usmEmail: [
+    { required: true, message: 'Please enter USM email', trigger: 'blur' },
+    { type: 'email', message: 'Please enter valid email address', trigger: 'blur' },
+    {
+      validator: (rule, value, callback) => {
+        if (value && !value.toLowerCase().endsWith('.usm.my')) {
+          callback(new Error('Please use USM email (@usm.my) to register'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur'
+    }
+  ],
+  // 👇 新增验证码的必填规则
+  emailCode: [
+    { required: true, message: 'Please enter the verification code', trigger: 'blur' },
+    { len: 6, message: 'Code must be 6 digits', trigger: 'blur' }
+  ],
   userPassword: [
     { required: true, message: 'Please enter password', trigger: 'blur' },
     { min: 8, message: 'Password must be at least 8 characters', trigger: 'blur' }
@@ -259,24 +296,6 @@ const rules = reactive({
       validator: (rule, value, callback) => {
         if (value !== form.userPassword) {
           callback(new Error('Passwords do not match'))
-        } else {
-          callback()
-        }
-      },
-      trigger: 'blur'
-    }
-  ],
-  usmEmail: [
-    { required: true, message: 'Please enter USM email', trigger: 'blur' },
-    {
-      type: 'email',
-      message: 'Please enter valid email address',
-      trigger: 'blur'
-    },
-    {
-      validator: (rule, value, callback) => {
-        if (value && !value.toLowerCase().endsWith('.usm.my')) {
-          callback(new Error('Please use USM email (@usm.my) to register'))
         } else {
           callback()
         }
@@ -322,6 +341,7 @@ const rules = reactive({
     }
   ]
 })
+
 const schoolList = [
   'School of Computer Sciences',
   'School of Management',
@@ -337,44 +357,73 @@ const schoolList = [
   'School of Social Sciences',
   'Other (Others)'
 ]
-const handleRegister = async () => {
-    console.log("【追踪 1】✅ 按钮被点击了，成功进入注册函数！")
-    try {
-      console.log("【追踪 2】⏳ 准备校验表单...")
-      // 1. 校验表单
-      await formRef.value.validate()
-      
-      console.log("【追踪 3】🎉 表单校验完美通过！准备整理数据...")
-      // 2. 构造数据 
-      const requestData = {
-        ...form, 
-        userName: form.username,
-        phone: form.phone ? `+60${form.phone}` : null
-      }
 
-      console.log("【追踪 4】🚀 准备发送给后端，数据为:", requestData)
-      // 3. 发送真实请求
-      await userRegister(requestData)
-
-      console.log("【追踪 5】✅ 后端保存成功！准备关弹窗和跳转...")
-      // 4. 成功处理
-      dialogVisible.value = false
-      ElMessage.success('Registration successful! Please sign in.')
-      router.push('/login')
-
-    } catch (error) {
-      console.error('【🚨 抓到错误啦】Register Error:', error)
-      // 5. 错误处理
-      if (error.errorFields) {
-        ElMessage.error('Please fill in all required fields correctly')
-      } else {
-        ElMessage.error(error.message || 'Registration failed. Please try again.')
-      }
-    }
+// 👇 新增方法：发送验证码逻辑
+const sendVerificationCode = async () => {
+  // 1. 先验证邮箱格式是否正确
+  if (!form.usmEmail) {
+    ElMessage.warning('Please enter your USM email first')
+    return
   }
+  if (!form.usmEmail.toLowerCase().endsWith('.usm.my')) {
+    ElMessage.warning('Only USM emails ending with @usm.my are allowed')
+    return
+  }
+
+  // 2. 发送请求
+  try {
+    sendingCode.value = true
+    await sendEmailCode(form.usmEmail) // 调用后端接口
+    ElMessage.success('Verification code sent! Please check your email inbox.')
+    
+    // 3. 开启 60 秒倒计时防刷
+    countdown.value = 60
+    const timer = setInterval(() => {
+      countdown.value--
+      if (countdown.value <= 0) {
+        clearInterval(timer)
+      }
+    }, 1000)
+
+  } catch (error) {
+    ElMessage.error(error.message || 'Failed to send verification code. Please try again later.')
+  } finally {
+    sendingCode.value = false
+  }
+}
+
+const handleRegister = async () => {
+  try {
+    loading.value = true
+    await formRef.value.validate()
+    
+    const requestData = {
+      ...form, 
+      userName: form.username,
+      phone: form.phone ? `+60${form.phone}` : null
+    }
+
+    await userRegister(requestData)
+
+    dialogVisible.value = false
+    ElMessage.success('Registration successful! Please sign in.')
+    router.push('/login')
+
+  } catch (error) {
+    console.error('Register Error:', error)
+    if (error.errorFields) {
+      ElMessage.error('Please fill in all required fields correctly')
+    } else {
+      ElMessage.error(error.message || 'Registration failed. Please try again.')
+    }
+  } finally {
+    loading.value = false
+  }
+}
 </script>
 
 <style scoped>
+/* 样式部分保持不变，可以直接保留你原有的 CSS */
 .register-page {
   min-height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -390,13 +439,12 @@ const handleRegister = async () => {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
   overflow: hidden;
   max-width: 1200px;
-  width: '100%';
+  width: 100%;
   display: grid;
   grid-template-columns: 1fr 1.2fr;
   min-height: 800px;
 }
 
-/* 左侧样式 */
 .register-left {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
@@ -437,7 +485,6 @@ const handleRegister = async () => {
   color: #10b981;
 }
 
-/* 右侧样式 */
 .register-right {
   padding: 60px 50px;
   display: flex;
@@ -516,7 +563,6 @@ const handleRegister = async () => {
   line-height: 1.4;
 }
 
-/* 协议和按钮 */
 .form-actions {
   margin-top: 40px;
   text-align: center;
@@ -560,7 +606,6 @@ const handleRegister = async () => {
   cursor: not-allowed;
 }
 
-/* 响应式设计 */
 @media (max-width: 1024px) {
   .register-container {
     grid-template-columns: 1fr;
@@ -604,7 +649,6 @@ const handleRegister = async () => {
   }
 }
 
-/* 自定义表单样式 */
 :deep(.el-form-item__label) {
   font-weight: 600;
   color: #374151;

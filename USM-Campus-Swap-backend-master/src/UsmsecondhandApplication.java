@@ -14,4 +14,4 @@ public class UsmsecondhandApplication {
         SpringApplication.run(UsmsecondhandApplication.class, args);
     }
 
-}
+}  

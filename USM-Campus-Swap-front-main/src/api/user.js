@@ -1,5 +1,14 @@
 import request from '@/plugins/request.js'
 
+// 0. 发送邮箱验证码
+export function sendEmailCode(email) {
+    return request({
+        url: '/user/send-code',
+        method: 'get',
+        params: { email }
+    })
+}
+
 // 1. 注册
 export function userRegister(data) {
     return request({

@@ -34,6 +34,19 @@ public class UserController {
     @Resource
     private UserService userService;
 
+    // 👇 新增的接口：让前端调用来发送邮箱验证码
+    @GetMapping("/send-code")
+    public BaseResponse<String> sendCode(@RequestParam String email) {
+        if (StringUtils.isBlank(email)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Email cannot be empty");
+        }
+        boolean result = userService.sendRegistrationCode(email);
+        if (result) {
+            return ResultUtils.success("Verification code sent successfully");
+        } else {
+            return ResultUtils.error(ErrorCode.SYSTEM_ERROR, "Failed to send verification code");
+        }
+    }
 
     @PostMapping("/register")
     public BaseResponse<Long> userRegister(@RequestBody UserRegisterRequest userRegisterRequest) {
@@ -49,10 +62,15 @@ public class UserController {
         String studentId = userRegisterRequest.getStudentId();
         String school = userRegisterRequest.getSchool();
         String phone = userRegisterRequest.getPhone();
-        if (StringUtils.isAnyBlank(username, userAccount, userPassword, checkPassword,usmEmail,campus,school)) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        String emailCode = userRegisterRequest.getEmailCode(); // 👇 接收验证码
+
+        // 👇 将 emailCode 也加入非空校验中
+        if (StringUtils.isAnyBlank(username, userAccount, userPassword, checkPassword, usmEmail, campus, school, emailCode)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Required parameters missing");
         }
-        long result = userService.userRegister(username, userAccount, userPassword, checkPassword,usmEmail,campus,studentId,school,phone);
+        
+        // 👇 将 emailCode 传给 Service 处理
+        long result = userService.userRegister(username, userAccount, userPassword, checkPassword, usmEmail, campus, studentId, school, phone, emailCode);
         return ResultUtils.success(result);
     }
 
@@ -103,7 +121,6 @@ public class UserController {
 
     @PostMapping("/update")
     public BaseResponse<String> updateUser(@RequestBody UserUpdateRequest userUpdateRequest, HttpServletRequest request) {
-
 
         if (userUpdateRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);

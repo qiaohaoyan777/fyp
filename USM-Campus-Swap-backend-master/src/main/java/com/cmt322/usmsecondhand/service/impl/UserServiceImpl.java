@@ -16,6 +16,8 @@ import org.springframework.util.DigestUtils;
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.math.BigDecimal;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -34,19 +36,54 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
     @Resource
     private UserMapper userMapper;
 
+    // 👇 引入发邮件的服务
+    @Resource
+    private GmailEmailService gmailEmailService;
+
+    // 👇 使用内存安全的 Map 存储验证码和过期时间（避免使用 Redis，方便本地开发）
+    private static final Map<String, String> EMAIL_CODE_MAP = new ConcurrentHashMap<>();
+    private static final Map<String, Long> EMAIL_CODE_EXPIRE_MAP = new ConcurrentHashMap<>();
 
     /**
      * 盐值，混淆密码
      */
     private static final String SALT = "cmt322";
 
+    // 👇 新增方法：专门用来发送验证码
+    @Override
+    public boolean sendRegistrationCode(String email) {
+        if (StringUtils.isBlank(email) || !email.toLowerCase().endsWith(".usm.my")) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Please use a valid USM email (@student.usm.my or @usm.my)");
+        }
+
+        // 检查邮箱是否已被注册
+        QueryWrapper<User> emailWrapper = new QueryWrapper<>();
+        emailWrapper.eq("usmEmail", email);
+        if (this.count(emailWrapper) > 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "This email is already registered");
+        }
+
+        // 生成 6 位随机验证码
+        String code = String.valueOf((int)((Math.random() * 9 + 1) * 100000));
+        boolean sent = gmailEmailService.sendVerificationCode(email, code);
+
+        if (sent) {
+            EMAIL_CODE_MAP.put(email, code);
+            // 设置 5 分钟过期
+            EMAIL_CODE_EXPIRE_MAP.put(email, System.currentTimeMillis() + 5 * 60 * 1000);
+            return true;
+        }
+        return false;
+    }
+
+    // 👇 修改了参数，在末尾增加了 String emailCode
     @Override
     public long userRegister(String username, String userAccount, String userPassword,
                              String checkPassword, String usmEmail, String campus,
-                             String studentId, String school, String phone) {
-        // Validation
-        if (StringUtils.isAnyBlank(username, userAccount, userPassword, checkPassword)) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Required parameters cannot be empty");
+                             String studentId, String school, String phone, String emailCode) {
+        // Validation (增加了对 emailCode 的非空校验)
+        if (StringUtils.isAnyBlank(username, userAccount, userPassword, checkPassword, emailCode)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Required parameters (including verification code) cannot be empty");
         }
         if (username.length() > 20) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "Nickname cannot exceed 20 characters");
@@ -77,13 +114,29 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "Invalid email format");
         }
 
+        // 👇 核心逻辑：比对邮箱验证码
+        String storedCode = EMAIL_CODE_MAP.get(usmEmail);
+        Long expireTime = EMAIL_CODE_EXPIRE_MAP.get(usmEmail);
+
+        if (storedCode == null || expireTime == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Please request a verification code first");
+        }
+        if (System.currentTimeMillis() > expireTime) {
+            // 过期了就清理掉
+            EMAIL_CODE_MAP.remove(usmEmail);
+            EMAIL_CODE_EXPIRE_MAP.remove(usmEmail);
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Verification code has expired");
+        }
+        if (!storedCode.equals(emailCode)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Incorrect verification code");
+        }
+        // 👆 验证码比对结束
+
         // Phone number format validation (if provided)
         if (StringUtils.isNotBlank(phone)) {
             if (phone.length() < 12 || phone.length() > 13) {
                 throw new BusinessException(ErrorCode.PARAMS_ERROR, "Invalid phone number format");
             }
-
-
             // Verify if the rest are pure numbers
             String numberPart = phone.substring(3);
             if (!numberPart.matches("^[0-9]+$")) {
@@ -142,7 +195,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         user.setUserAccount(userAccount);
         user.setUserPassword(dealPassword);
         user.setUsmEmail(usmEmail);
-        user.setEmailVerified(1); // Initial state: not verified
+        user.setEmailVerified(0); // 👇 验证通过，这里改为 0 表示已验证 (视你的数据库约定而定)
         user.setCampus(campus);
         user.setStudentId(studentId);
         user.setSchool(school);
@@ -156,6 +209,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         if (!result) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "Registration failed");
         }
+
+        // 👇 注册成功后，立刻销毁内存中的验证码，防止重放攻击
+        EMAIL_CODE_MAP.remove(usmEmail);
+        EMAIL_CODE_EXPIRE_MAP.remove(usmEmail);
+
         return user.getId();
     }
 
@@ -358,7 +416,3 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
     }
 
 }
-
-
-
-

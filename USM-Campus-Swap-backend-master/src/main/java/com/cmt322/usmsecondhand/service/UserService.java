@@ -18,9 +18,10 @@ public interface UserService extends IService<User> {
      * @param checkPassword 校验密码
      * @return 新用户id
      */
+    boolean sendRegistrationCode(String email);
     long userRegister(String username, String userAccount, String userPassword,
                       String checkPassword, String usmEmail, String campus,
-                      String studentId, String school, String phone);
+                      String studentId, String school, String phone, String emailCode);
 
     /**
      *

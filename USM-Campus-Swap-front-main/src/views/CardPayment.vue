@@ -13,9 +13,9 @@
 
       <el-card class="card-form-container" shadow="hover">
         <div class="card-icons">
-            //本地Visa
+          
           <img src="@/assets/Visa.png" alt="Visa" class="card-icon" />
-          //网络Mastercard
+         
           <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg" alt="Mastercard" class="card-icon" />
         </div>
 

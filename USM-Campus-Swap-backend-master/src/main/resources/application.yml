@@ -1,4 +1,19 @@
 spring:
+  # 👇👇👇 邮件服务配置开始 👇👇👇
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: qiaohaoyan777@gmail.com      # 替换成你的 Gmail 邮箱
+    password: bete pboz xbhn qtkw        # 替换成你在 Google 账号里生成的 16 位密码 (不要用登录密码)
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+  # 👆👆👆 邮件服务配置结束 👆👆👆
+
   # 👇👇👇 从这里开始，新加这 4 行配置 👇👇👇
   servlet:
     multipart:
@@ -58,6 +73,7 @@ mybatis-plus:
       logic-delete-field: isDelete
       logic-delete-value: 1
       logic-not-delete-value: 0
+
 # 填入你申请的 Gemini API Key
 gemini:
   api:

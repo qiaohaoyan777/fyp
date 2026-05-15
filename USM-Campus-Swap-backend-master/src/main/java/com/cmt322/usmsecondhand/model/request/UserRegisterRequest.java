@@ -16,4 +16,12 @@ public class UserRegisterRequest implements Serializable {
     private  String studentId;
     private  String school;
     private  String phone;
+    private String emailCode;
+    public String getEmailCode() {
+        return emailCode;
+    }
+
+    public void setEmailCode(String emailCode) {
+        this.emailCode = emailCode;
+    }
 }
