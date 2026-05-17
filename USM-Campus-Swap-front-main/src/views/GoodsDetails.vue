@@ -50,22 +50,28 @@
                 <div class="spec-value">{{ goods.category }}</div>
               </div>
               
+              <div class="spec-item" v-if="goods.specifics">
+                <span class="spec-label">Item Spec / Size</span>
+                <el-tag effect="plain" type="info" size="large">{{ goods.specifics }}</el-tag>
+              </div>
+              
               <div class="spec-item">
                 <span class="spec-label">{{ goods.deliveryMethod === 2 ? 'Delivery Method' : 'Meetup Location' }}</span>
                 
-                <div class="spec-value location-value" v-if="goods.deliveryMethod === 1">
+                <div class="spec-value location-value clickable-location" v-if="goods.deliveryMethod === 1" @click="showMapDialog" title="Click to view on map">
                   <el-icon><Location /></el-icon> 
                   {{ goods.campus }} 
-                  <span v-if="goods.address && goods.address.trim() !== ''" class="detailed-address">
+                  <span v-if="goods.address && goods.address.trim() !== '' && goods.address !== 'Other'" class="detailed-address">
                     - {{ goods.address }}
                   </span>
+                  <el-icon class="map-hint-icon"><MapLocation /></el-icon>
                 </div>
                 
                 <div class="spec-value location-value" style="color: #E6A23C;" v-else>
                   <el-icon><Van /></el-icon> Delivery
                 </div>
               </div>
-            </div>
+              </div>
 
             <div class="description-box">
               <h3>Description</h3>
@@ -226,6 +232,26 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="mapVisible" title="Location Map" width="600px" destroy-on-close align-center>
+      <div style="width: 100%; height: 400px; border-radius: 8px; overflow: hidden; background: #f0f2f5;">
+        <iframe
+          width="100%"
+          height="100%"
+          frameborder="0"
+          style="border:0"
+          :src="mapIframeUrl"
+          allowfullscreen>
+        </iframe>
+      </div>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button type="primary" plain @click="openInGoogleMapsApp">
+            <el-icon style="margin-right: 6px;"><Location /></el-icon> Open in Google Maps
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
@@ -233,7 +259,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Star, StarFilled, View, Clock, Location, Message, Van, Warning } from '@element-plus/icons-vue'
+import { Star, StarFilled, View, Clock, Location, Message, Van, Warning, MapLocation } from '@element-plus/icons-vue' // 引入 MapLocation
 import myAxios from "@/plugins/request";
 import { useUserStore } from '@/stores/user'
 
@@ -243,7 +269,6 @@ const router = useRouter()
 
 const sellerDialogVisible = ref(false)
 
-// 管理员权限判断
 const isAdmin = computed(() => userStore.userInfo?.userRole === 1)
 const takeDownDialogVisible = ref(false)
 const takeDownReason = ref('')
@@ -259,6 +284,7 @@ const goods = ref({
   category: '',
   campus: '',
   address: '', 
+  specifics: '', 
   condition: '',
   description: '',
   viewCount: 0,
@@ -302,13 +328,22 @@ const loadGoodsDetail = async () => {
     const res = await myAxios.get(`/goods/${id}`)
 
     if(res){
+      // 🌟 强效排错检查：可以在控制台看到后端到底返回了什么字段
+      console.log("Backend response:", res); 
+
       goods.value = {
         id: res.id,
         title: res.title,
         price: res.price,
         description: res.description,
         campus: res.campus || (res.user ? res.user.campus : 'Main Campus'),
-        address: res.address || res.location || '', 
+        
+        // 🌟 修复点 1：扩大了读取地点的字段范围，应对前后端字段名不一致
+        address: res.address || res.location || res.meetupLocation || '', 
+        
+        // 🌟 修复点 2：确保 specifics 被正确读取
+        specifics: res.specifics || res.itemSpec || '', 
+        
         deliveryMethod: Number(res.deliveryMethod) || 1, 
         category: res.categoryName || 'General',
         condition: mapCondition(res.condition),
@@ -423,12 +458,10 @@ const openChatWithSeller = async () => {
   }
 }
 
-// 管理员提交下架逻辑
 const submitTakeDown = async () => {
   const finalReason = takeDownReason.value === 'Other' ? takeDownCustomReason.value : takeDownReason.value;
   
   try {
-    // 🌟 核心修正：路径加上了 /goods 前缀
     await myAxios.post('/goods/admin/takedown', {
       goodsId: goods.value.id,
       sellerId: goods.value.userId,
@@ -448,6 +481,55 @@ const submitTakeDown = async () => {
     console.error(error);
   }
 }
+
+// 🌟 ====== 地图功能核心逻辑 ====== 🌟
+const mapVisible = ref(false)
+const mapIframeUrl = ref('')
+const mapExternalUrl = ref('')
+
+const showMapDialog = () => {
+  if (goods.value.deliveryMethod !== 1) return;
+
+  // 🌟 1. 构造“精准定位”搜索词
+  // 逻辑：具体建筑名 + 校区 + 大学名称 + 城市
+  // 例如："Student Center, Main Campus, Universiti Sains Malaysia, Penang"
+  let parts = [];
+  
+  // 第一优先级：具体的交易地点（如 Student Center）
+  if (goods.value.address && goods.value.address !== 'Other') {
+    parts.push(goods.value.address);
+  }
+  
+  // 第二优先级：校区名（如 Main Campus）
+  if (goods.value.campus) {
+    parts.push(goods.value.campus);
+  }
+  
+  // 第三优先级：大学全称（确保不会搜到校外去）
+  parts.push("Universiti Sains Malaysia");
+
+  // 第四优先级：城市（进一步增加权重）
+  if (goods.value.campus === 'Main Campus') parts.push("Penang");
+  if (goods.value.campus === 'Engineering Campus') parts.push("Nibong Tebal");
+  if (goods.value.campus === 'Health Campus') parts.push("Kelantan");
+
+  const searchQuery = parts.join(", ");
+  const encodedQuery = encodeURIComponent(searchQuery);
+
+  // 🌟 2. 修复语法：注意前面的 $ 符号，并使用更稳定的嵌入链接
+  // z=18 是街道/建筑级缩放，能直接看清哪栋楼
+  mapIframeUrl.value = `https://maps.google.com/maps?q=${encodedQuery}&t=&z=18&ie=UTF8&iwloc=&output=embed`;
+  
+  // 外部链接也同步修复
+  mapExternalUrl.value = `https://www.google.com/maps/search/${encodedQuery}`;
+
+  mapVisible.value = true;
+}
+
+const openInGoogleMapsApp = () => {
+  window.open(mapExternalUrl.value, '_blank');
+}
+// ===================================
 </script>
 
 <style scoped>
@@ -476,6 +558,32 @@ const submitTakeDown = async () => {
 
 .location-value { display: flex; align-items: center; gap: 4px; color: #409EFF; }
 .detailed-address { color: #64748b; font-size: 14px; margin-left: 5px; font-weight: normal; }
+
+/* 🌟 地图可点击区域的特效 */
+.clickable-location {
+  cursor: pointer;
+  padding: 6px 10px;
+  margin-left: -10px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+}
+.clickable-location:hover {
+  background-color: #f0f7ff;
+  color: #409EFF;
+}
+.map-hint-icon {
+  margin-left: 8px;
+  font-size: 16px;
+  color: #409EFF;
+  opacity: 0.7;
+  transition: opacity 0.3s;
+}
+.clickable-location:hover .map-hint-icon {
+  opacity: 1;
+  transform: scale(1.1);
+}
 
 .description-box h3 { font-size: 16px; font-weight: 600; margin-bottom: 10px; color: #303133; }
 .description-box p { color: #606266; line-height: 1.7; font-size: 14px; background: #f9fafc; padding: 15px; border-radius: 8px; margin: 0 0 25px 0; }

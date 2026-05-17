@@ -30,7 +30,7 @@ public class User implements Serializable {
     /**
      * Login Account
      */
-    private String userAccount;
+    //private String userAccount;
 
     /**
      * Avatar URL

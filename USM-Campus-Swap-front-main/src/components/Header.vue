@@ -33,21 +33,6 @@
       </el-menu>
     </div>
 
-    <div class="header-center">
-      <el-input
-          v-model="searchKeyword"
-          placeholder="Search products..."
-          class="search-input"
-          size="large"
-          @keyup.enter="handleSearch"
-          clearable
-      >
-        <template #append>
-          <el-button icon="Search" @click="handleSearch"></el-button>
-        </template>
-      </el-input>
-    </div>
-
     <div class="header-right">
       <div class="action-buttons">
         
@@ -96,12 +81,12 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import {
   Shop, House, Star, Collection, Document,
-  ChatDotRound, Plus, Search, ArrowDown,
+  ChatDotRound, Plus, ArrowDown,
   User, SwitchButton, Management
 } from '@element-plus/icons-vue'
 
@@ -109,30 +94,11 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
-const searchKeyword = ref('')
 const activeIndex = computed(() => route.path)
 
 const isLogin = computed(() => !!userStore.userInfo)
 const userAvatar = computed(() => userStore.userInfo?.avatarUrl || 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png')
 const userName = computed(() => userStore.userInfo?.username || 'User')
-
-const handleSearch = () => {
-  const keyword = searchKeyword.value.trim()
-  router.push({
-    path: '/',
-    query: {
-      keyword: keyword || undefined 
-    }
-  })
-}
-
-watch(
-    () => route.query.keyword,
-    (newVal) => {
-      searchKeyword.value = newVal || ''
-    },
-    { immediate: true }
-)
 
 const handleLogout = async () => {
   await userStore.logout()
@@ -145,6 +111,7 @@ const goMessages = () => router.push('/messages')
 <style scoped>
 .header {
   display: flex;
+  justify-content: space-between;
   align-items: center;
   height: 64px;
   padding: 0 20px;
@@ -156,7 +123,7 @@ const goMessages = () => router.push('/messages')
 .header-left {
   display: flex;
   align-items: center;
-  flex: 2;
+  flex: 1;
   min-width: 0;
 }
 
@@ -176,19 +143,6 @@ const goMessages = () => router.push('/messages')
   border: none !important;
   height: 64px;
   flex: 1;
-}
-
-.header-center {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-  padding: 0 20px;
-  min-width: 200px;
-}
-
-.search-input {
-  width: 100%;
-  max-width: 400px; 
 }
 
 .header-right {

@@ -63,6 +63,7 @@ public class Goods {
     private Integer likeCount;
 
     private String campus;
+    private String specifics;
 
     @TableField(value = "contactType")
     private Integer contactType;

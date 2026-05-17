@@ -41,9 +41,6 @@ public class GoodsController {
 
     // --- 1. 管理员下架功能 (新增) ---
 
-    /**
-     * 下架请求参数类
-     */
     @Data
     public static class TakedownRequest {
         private Long goodsId;
@@ -52,14 +49,9 @@ public class GoodsController {
         private String reason;
     }
 
-    /**
-     * 管理员下架商品并自动发送系统通知
-     */
     @PostMapping("/admin/takedown")
     public BaseResponse<Boolean> adminTakedownGoods(@RequestBody TakedownRequest request, HttpServletRequest httpRequest) {
-        // 🔒 权限校验：必须是管理员
         if (!userService.isAdmin(httpRequest)) {
-            // 这里使用了你 ErrorCode.java 中真实的 NO_AUTH
             throw new BusinessException(ErrorCode.NO_AUTH, "Admin authority required.");
         }
 
@@ -67,22 +59,19 @@ public class GoodsController {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
 
-        // 1. 将商品状态设为 2 (下架状态)
         Goods goods = new Goods();
         goods.setId(request.getGoodsId());
         goods.setStatus(2); 
         boolean updateResult = goodsService.updateById(goods);
 
-        // 2. 发送系统私信通知卖家
         if (updateResult) {
             Message systemMsg = new Message();
-            systemMsg.setConversationId(0L); // 系统级对话
-            systemMsg.setSenderId(0L);       // 发送者为系统 (ID: 0)
+            systemMsg.setConversationId(0L); 
+            systemMsg.setSenderId(0L);       
             systemMsg.setReceiverId(request.getSellerId());
-            systemMsg.setType(1);            // 文本消息
-            systemMsg.setIsRead(0);          // 标记未读，触发红点提示
+            systemMsg.setType(1);            
+            systemMsg.setIsRead(0);          
             
-            // 拼写英文通知内容
             String content = "📢 [System Notice]: Your item \"" + request.getGoodsTitle() + 
                              "\" has been taken down due to violation. Reason: " + request.getReason() + 
                              ". Please comply with university marketplace regulations.";
@@ -108,6 +97,20 @@ public class GoodsController {
         List<GoodsVO> list = goodsService.searchGoods(keyword, categoryId);
         return ResultUtils.success(list);
     }
+
+    // 👇👇👇 这是为你新增的 /list 接口，完美对接前端的 getGoodsList 👇👇👇
+    @GetMapping("/list")
+    public BaseResponse<IPage<GoodsVO>> getGoodsList(
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "12") int pageSize,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long categoryId) {
+        
+        // 调用现有的分页服务，将前端的 keyword 作为 title 传入进行模糊搜索，且只查询状态为 1 (已上架) 的商品
+        IPage<GoodsVO> result = goodsService.listGoodsVOByPage(pageNum, pageSize, keyword, categoryId, 1);
+        return ResultUtils.success(result);
+    }
+    // 👆👆👆 新增结束 👆👆👆
 
     @GetMapping("/list/page/vo")
     public BaseResponse<IPage<GoodsVO>> listGoodsVOByPage(

@@ -41,25 +41,14 @@
             <div class="form-section">
               <h3 class="section-title">Account Information</h3>
 
-              <div class="form-row">
-                <el-form-item label="Account" prop="userAccount" class="form-item">
-                  <el-input
-                      v-model="form.userAccount"
-                      placeholder="Enter your Account"
-                      maxlength="20"
-                  />
-                  <p class="form-hint">4-20 characters, letters, numbers and underscores only</p>
-                </el-form-item>
-
-                <el-form-item label="User Name" prop="username" class="form-item">
-                  <el-input
-                      v-model="form.username"
-                      placeholder="Enter your User name"
-                      maxlength="20"
-                      show-word-limit
-                  />
-                </el-form-item>
-              </div>
+              <el-form-item label="User Name" prop="username" class="form-item">
+                <el-input
+                    v-model="form.username"
+                    placeholder="Enter your User name"
+                    maxlength="20"
+                    show-word-limit
+                />
+              </el-form-item>
 
               <div class="form-row">
                 <el-form-item label="USM Email" prop="usmEmail" class="form-item">
@@ -203,7 +192,7 @@
       width="400px"
     >
       <div style="line-height: 1.8; font-size: 16px;">
-        <p><strong>Account:</strong> {{ form.userAccount }}</p>
+        <p><strong>Name:</strong> {{ form.username }}</p>
         <p><strong>School:</strong> {{ form.school }}</p>
         <p><strong>Email:</strong> {{ form.usmEmail }}</p>
         <p style="color: #E6A23C; margin-top: 15px; font-size: 14px;">
@@ -227,7 +216,7 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Check, User } from '@element-plus/icons-vue'
-import { userRegister, sendEmailCode } from '@/api/user' // 👇 确保你的 api/user.js 导出了 sendEmailCode
+import { userRegister, sendEmailCode } from '@/api/user' 
 
 const router = useRouter()
 const formRef = ref()
@@ -235,37 +224,25 @@ const loading = ref(false)
 const agreeTerms = ref(false)
 const dialogVisible = ref(false)
 
-// 👇 验证码相关的状态
 const sendingCode = ref(false)
 const countdown = ref(0)
 
 const form = reactive({
   username: '',
-  userAccount: '',
   userPassword: '',
   checkPassword: '',
   usmEmail: '',
-  emailCode: '', // 👇 新增验证码字段
+  emailCode: '', 
   campus: '',
   studentId: '',
   school: '',
   phone: ''
 })
 
-// 验证规则
 const rules = reactive({
   username: [
     { required: true, message: 'Please enter your User name', trigger: 'blur' },
     { min: 1, max: 20, message: 'User name cannot exceed 20 characters', trigger: 'blur' }
-  ],
-  userAccount: [
-    { required: true, message: 'Please enter account', trigger: 'blur' },
-    { min: 4, message: 'Account must be at least 4 characters', trigger: 'blur' },
-    {
-      pattern: /^[a-zA-Z0-9_]+$/,
-      message: 'Account can only contain letters, numbers and underscores',
-      trigger: 'blur'
-    }
   ],
   usmEmail: [
     { required: true, message: 'Please enter USM email', trigger: 'blur' },
@@ -281,7 +258,6 @@ const rules = reactive({
       trigger: 'blur'
     }
   ],
-  // 👇 新增验证码的必填规则
   emailCode: [
     { required: true, message: 'Please enter the verification code', trigger: 'blur' },
     { len: 6, message: 'Code must be 6 digits', trigger: 'blur' }
@@ -358,9 +334,7 @@ const schoolList = [
   'Other (Others)'
 ]
 
-// 👇 新增方法：发送验证码逻辑
 const sendVerificationCode = async () => {
-  // 1. 先验证邮箱格式是否正确
   if (!form.usmEmail) {
     ElMessage.warning('Please enter your USM email first')
     return
@@ -370,13 +344,11 @@ const sendVerificationCode = async () => {
     return
   }
 
-  // 2. 发送请求
   try {
     sendingCode.value = true
-    await sendEmailCode(form.usmEmail) // 调用后端接口
+    await sendEmailCode(form.usmEmail) 
     ElMessage.success('Verification code sent! Please check your email inbox.')
     
-    // 3. 开启 60 秒倒计时防刷
     countdown.value = 60
     const timer = setInterval(() => {
       countdown.value--
@@ -423,7 +395,6 @@ const handleRegister = async () => {
 </script>
 
 <style scoped>
-/* 样式部分保持不变，可以直接保留你原有的 CSS */
 .register-page {
   min-height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);

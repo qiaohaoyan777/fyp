@@ -18,6 +18,8 @@ public class GoodsUpdateRequest {
     private List<String> images;
     private Integer condition;
     private String campus;
+    private String address;
+    private String specifics;
     private Integer status;
     private Integer contactType;
     private List<Integer> contactTypes;

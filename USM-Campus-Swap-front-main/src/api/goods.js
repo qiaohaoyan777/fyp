@@ -33,3 +33,15 @@ export function getGoodsDetail(id) {
         method: 'get'
     })
 }
+// 获取商品列表（支持模糊搜索）
+export const searchGoodsAPI = (keyword = '', current = 1, size = 10) => {
+  return request({
+    url: '/goods/search',
+    method: 'GET',
+    params: { 
+      keyword,
+      current,
+      size
+    }
+  })
+}

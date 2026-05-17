@@ -33,6 +33,11 @@
             </div>
 
             <div class="product-info">
+              <div class="tags-row">
+                 <span class="category-badge">{{ product.categoryName }}</span>
+                 <span v-if="product.specifics" class="specific-badge">{{ product.specifics }}</span>
+              </div>
+              
               <h3 class="product-title">{{ product.title }}</h3>
               <p class="product-price">RM{{ product.price?.toFixed(2) }}</p>
               
@@ -78,6 +83,11 @@
             </div>
             
             <div class="product-info">
+              <div class="tags-row">
+                 <span class="category-badge">{{ product.categoryName }}</span>
+                 <span v-if="product.specifics" class="specific-badge">{{ product.specifics }}</span>
+              </div>
+
               <h3 class="product-title">{{ product.title }}</h3>
               <p class="product-price">RM{{ product.price?.toFixed(2) }}</p>
               
@@ -105,6 +115,11 @@
             </div>
 
             <div class="product-info">
+              <div class="tags-row">
+                 <span class="category-badge">{{ product.categoryName }}</span>
+                 <span v-if="product.specifics" class="specific-badge">{{ product.specifics }}</span>
+              </div>
+
               <h3 class="product-title">{{ product.title }}</h3>
               <p class="product-price">RM{{ product.price?.toFixed(2) }}</p>
               
@@ -137,8 +152,19 @@ const activeTab = ref('active')
 const searchKeyword = ref('')
 const loading = ref(false)
 const products = ref([])
+const categories = ref([])
 
 const STATUS_MAP = { 1: 'active', 2: 'sold', 3: 'inactive' }
+
+// 🌟 新增：先获取所有商品类别
+const loadCategories = async () => {
+  try {
+    const res = await myAxios.get('/category/list');
+    categories.value = res || [];
+  } catch (error) {
+    console.error('Failed to load categories', error);
+  }
+}
 
 const processImage = (imgData) => {
   if (!imgData) return 'https://cube.elemecdn.com/e/fd/0fc7d20532fdaf769a25683617711png.png';
@@ -161,14 +187,22 @@ const loadMyProducts = async () => {
   try {
     const res = await myAxios.get('/goods/my/list');
     if (res && Array.isArray(res)) {
-      products.value = res.map(item => ({
-        ...item,
-        coverImage: processImage(item.images || item.coverImage),
-        status: STATUS_MAP[item.status] || 'inactive',
-        deliveryMethod: item.deliveryMethod || 1,
-        campus: item.campus || 'Main Campus',
-        address: item.address || ''
-      }));
+      products.value = res.map(item => {
+        // 🌟 动态匹配出这个商品的种类名称
+        const matchedCategory = categories.value.find(c => String(c.id) === String(item.categoryId));
+        const catName = matchedCategory ? matchedCategory.name : 'General';
+
+        return {
+          ...item,
+          categoryName: catName, // 保存种类名称
+          specifics: item.specifics || '', // 保存属性细节
+          coverImage: processImage(item.images || item.coverImage),
+          status: STATUS_MAP[item.status] || 'inactive',
+          deliveryMethod: item.deliveryMethod || 1,
+          campus: item.campus || 'Main Campus',
+          address: item.address || ''
+        };
+      });
     }
   } catch (error) {
     console.error(error);
@@ -194,18 +228,20 @@ const activeProducts = computed(() => filterProducts('active'))
 const soldProducts = computed(() => filterProducts('sold'))
 const inactiveProducts = computed(() => filterProducts('inactive'))
 
-onMounted(loadMyProducts)
+// 🌟 确保先加载分类，再去请求商品数据
+onMounted(async () => {
+  await loadCategories();
+  loadMyProducts();
+})
 </script>
 
 <style scoped>
-.my-products-page { max-width: 1000px; margin: 0 auto; padding: 20px; } /* 稍微收窄，让长条形更好看 */
+.my-products-page { max-width: 1000px; margin: 0 auto; padding: 20px; } 
 .page-header { text-align: center; margin-bottom: 30px; }
 .page-actions { display: flex; justify-content: space-between; margin-bottom: 20px; }
 
-/* 🌟 核心修改 1：取消网格，改成垂直排列的列表 */
 .products-list { display: flex; flex-direction: column; gap: 16px; }
 
-/* 🌟 核心修改 2：卡片内部的水平排版 */
 .product-card { 
   border: 1px solid #ebeef5; 
   border-radius: 12px; 
@@ -214,7 +250,7 @@ onMounted(loadMyProducts)
   gap: 24px; 
   background: #fff; 
   transition: all 0.3s ease; 
-  align-items: center; /* 垂直居中对齐 */
+  align-items: center; 
 }
 .clickable-card { cursor: pointer; }
 .product-card:hover { 
@@ -223,16 +259,37 @@ onMounted(loadMyProducts)
   border-color: #dcdfe6;
 }
 
-/* 图片略微放大，并固定大小防止被挤压 */
-.product-image { width: 120px; height: 120px; border-radius: 8px; overflow: hidden; position: relative; flex-shrink: 0;}
-.product-image img { width: 100%; height: 100%; object-fit: cover; }
-.product-status { position: absolute; top: 0; left: 0; font-size: 11px; color: #fff; padding: 4px 8px; border-bottom-right-radius: 8px; font-weight: bold;}
+/* 🌟 图片：改成 contain 并加上底色防裁切 */
+.product-image { 
+  width: 120px; 
+  height: 120px; 
+  border-radius: 8px; 
+  overflow: hidden; 
+  position: relative; 
+  flex-shrink: 0;
+  background-color: #f8fafc;
+  border: 1px solid #f1f5f9;
+}
+.product-image img { 
+  width: 100%; 
+  height: 100%; 
+  object-fit: contain; /* 防止长图被裁切 */
+  padding: 8px; 
+  box-sizing: border-box;
+}
+
+.product-status { position: absolute; top: 0; left: 0; font-size: 11px; color: #fff; padding: 4px 8px; border-bottom-right-radius: 8px; font-weight: bold; z-index: 2;}
 .product-status.active { background: #67c23a; }
 .product-status.sold { background: #909399; }
 .product-status.draft { background: #e6a23c; }
 
-/* 🌟 核心修改 3：文字区占满剩余空间，解除截断封印 */
 .product-info { flex: 1; display: flex; flex-direction: column; justify-content: center; min-width: 0;}
+
+/* 🌟 新增：标签区的样式 */
+.tags-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.category-badge { font-size: 11px; font-weight: 700; color: #4f46e5; background: #e0e7ff; padding: 3px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+.specific-badge { font-size: 11px; font-weight: 700; color: white; background: rgba(79, 70, 229, 0.9); padding: 3px 8px; border-radius: 6px; }
+
 .product-title { 
   font-size: 18px; 
   margin: 0 0 8px; 
@@ -244,7 +301,6 @@ onMounted(loadMyProducts)
 }
 .product-price { color: #f56c6c; font-weight: bold; font-size: 20px; margin: 0 0 10px; }
 
-/* 地点栏：再也不用担心名字太长被盖住了 */
 .delivery-badge { font-size: 14px; margin-bottom: 8px; }
 .delivery-badge .delivery { color: #409EFF; display: flex; align-items: center; gap: 6px; font-weight: 500;}
 .delivery-badge .meetup { color: #67c23a; display: flex; align-items: center; gap: 6px; font-weight: 500;}
@@ -253,7 +309,6 @@ onMounted(loadMyProducts)
 .meta-item { font-size: 13px; color: #999; display: flex; align-items: center; gap: 4px; }
 .sold-info { color: #67c23a; font-size: 14px; margin-top: 10px; font-weight: bold;}
 
-/* 🌟 核心修改 4：右侧按钮区变成整齐的竖排阵列 */
 .product-actions { 
   display: flex; 
   flex-direction: column; 
@@ -261,6 +316,6 @@ onMounted(loadMyProducts)
   justify-content: center; 
   min-width: 140px; 
 }
-.product-actions .el-button { margin-left: 0; width: 100%;} /* 强制按钮等宽且对齐 */
-.product-actions .el-button + .el-button { margin-left: 0 !important; } /* 覆盖 Element UI 默认的兄弟按钮间距 */
+.product-actions .el-button { margin-left: 0; width: 100%;}
+.product-actions .el-button + .el-button { margin-left: 0 !important; }
 </style>

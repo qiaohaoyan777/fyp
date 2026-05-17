@@ -85,6 +85,8 @@ public class GoodsVO implements Serializable {
      */
     private String campus;
 
+    private String specifics;
+
     // 🌟 新增：交易方式 (1: 面交, 2: 邮寄/送货)
     private Integer deliveryMethod;
 

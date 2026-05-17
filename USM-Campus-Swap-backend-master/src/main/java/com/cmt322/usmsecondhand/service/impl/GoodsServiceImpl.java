@@ -191,7 +191,6 @@ public class GoodsServiceImpl extends ServiceImpl<GoodsMapper, Goods> implements
                     double avg = sum / reviews.size();
                     
                     // 🌟 核心改进：使用 BigDecimal 进行四舍五入，保留一位小数
-                    // 14 / 3 = 4.666... -> 4.7
                     BigDecimal bd = new BigDecimal(avg);
                     double finalRating = bd.setScale(1, RoundingMode.HALF_UP).doubleValue();
                     userVO.setRating(finalRating);
@@ -215,12 +214,20 @@ public class GoodsServiceImpl extends ServiceImpl<GoodsMapper, Goods> implements
         return goodsVO;
     }
 
+    // 👇👇👇 核心修改位置：分页获取商品并支持全字段模糊搜索 👇👇👇
     @Override
-    public IPage<GoodsVO> listGoodsVOByPage(int current, int size, String title, Long categoryId, Integer status) {
+    public IPage<GoodsVO> listGoodsVOByPage(int current, int size, String keyword, Long categoryId, Integer status) {
         Page<Goods> goodsPage = new Page<>(current, size);
         QueryWrapper<Goods> queryWrapper = new QueryWrapper<>();
 
-        queryWrapper.like(StringUtils.isNotBlank(title), "title", title);
+        // 确保永远不会查出被逻辑删除的商品
+        queryWrapper.eq("isDelete", 0);
+
+        // 模糊搜索逻辑：只要标题 OR 描述中包含关键字，就搜出来！
+        if (StringUtils.isNotBlank(keyword)) {
+            queryWrapper.and(qw -> qw.like("title", keyword).or().like("description", keyword));
+        }
+
         queryWrapper.eq(categoryId != null && categoryId > 0, "categoryId", categoryId);
         queryWrapper.eq(status != null, "status", status);
         queryWrapper.orderByDesc("createTime");
@@ -250,6 +257,7 @@ public class GoodsServiceImpl extends ServiceImpl<GoodsMapper, Goods> implements
 
         return goodsVOPage;
     }
+    // 👆👆👆 修改结束 👆👆👆
 
     @Override
     public List<GoodsVO> listMyGoods(User loginUser, Integer status) {

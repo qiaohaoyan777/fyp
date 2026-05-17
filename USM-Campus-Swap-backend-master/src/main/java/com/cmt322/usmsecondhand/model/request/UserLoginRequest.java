@@ -8,7 +8,8 @@ public class UserLoginRequest implements Serializable {
 
 
     private static final long serialVersionUID = 3688259211110907982L;
-    private  String userAccount;
+    //private  String userAccount;
+    private String usmEmail;
     private  String userPassword;
 
 }

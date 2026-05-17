@@ -21,6 +21,23 @@
 
     <div class="main-content" v-if="!showSplash">
       <div class="category-wrapper">
+        
+        <div class="search-wrapper">
+          <el-input
+            v-model="searchKeyword"
+            placeholder="Search for items, books, electronics..."
+            class="custom-search-input"
+            clearable
+            @clear="handleSearch"
+            @keyup.enter="handleSearch"
+          >
+            <template #append>
+              <el-button @click="handleSearch" class="search-btn">
+                <el-icon><Search /></el-icon> Search
+              </el-button>
+            </template>
+          </el-input>
+        </div>
         <div class="category-filter">
           <div
               class="filter-item"
@@ -64,7 +81,7 @@
         </div>
 
         <div v-else-if="products.length === 0" class="empty-state">
-          <el-empty description="No items found in this category" :image-size="200" />
+          <el-empty description="No items found. Try different keywords!" :image-size="200" />
         </div>
 
         <div v-else class="products-grid fade-in">
@@ -78,6 +95,7 @@
               <img :src="item.coverImage" :alt="item.title" class="product-img" />
               <div class="glass-tags">
                 <span class="condition-tag" :class="`cond-${item.condition}`">{{ item.conditionText }}</span>
+                <span v-if="item.specifics" class="condition-tag specific-tag">{{ item.specifics }}</span>
               </div>
               <span class="campus-tag">
                 <el-icon><Location /></el-icon> {{ item.campus }}
@@ -92,8 +110,12 @@
                    <el-icon><StarFilled v-if="item.wishlistCount > 0" /><Star v-else /></el-icon> 
                    {{ item.wishlistCount || 0 }}
                 </span>
-                
               </div>
+              
+              <div class="category-badge-wrapper">
+                 <span class="category-badge">{{ item.categoryName }}</span>
+              </div>
+
               <h3 class="title" :title="item.title">{{ item.title }}</h3>
               
               <div class="seller-row">
@@ -123,7 +145,7 @@
 <script setup>
 import { ref, reactive, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Star, StarFilled, Location, ArrowRight, Check } from '@element-plus/icons-vue'
+import { Star, StarFilled, Location, ArrowRight, Check, Search } from '@element-plus/icons-vue'
 import myAxios from '@/plugins/request'
 import { listCategories } from '@/api/category'
 import { useUserStore } from '@/stores/user'
@@ -139,6 +161,8 @@ const categories = ref([])
 const activeCategory = ref('all')
 const total = ref(0)
 const showSplash = ref(true)
+
+const searchKeyword = ref(route.query.keyword || '')
 
 const handleStartExploring = () => {
   if (!userStore.userInfo) {
@@ -161,9 +185,24 @@ const goToDetail = (id) => {
 const queryParams = reactive({
   pageNum: 1,
   pageSize: 12,
-  keyword: '',
+  keyword: route.query.keyword || '',
   categoryId: null
 })
+
+const handleSearch = () => {
+  queryParams.keyword = searchKeyword.value
+  queryParams.pageNum = 1
+  
+  if (searchKeyword.value) {
+    router.replace({ query: { ...route.query, keyword: searchKeyword.value } })
+  } else {
+    const newQuery = { ...route.query }
+    delete newQuery.keyword
+    router.replace({ query: newQuery })
+  }
+  
+  loadProducts()
+}
 
 const loadCategories = async () => {
   try {
@@ -177,8 +216,6 @@ const loadCategories = async () => {
 const loadProducts = async () => {
   loading.value = true
   try {
-    queryParams.keyword = route.query.keyword || ''
-
     const params = {
       current: queryParams.pageNum,
       size: queryParams.pageSize,
@@ -217,14 +254,19 @@ const loadProducts = async () => {
         }
 
         const conditionMap = { 1: 'New', 2: 'Like New', 3: 'Good', 4: 'Fair' }
+        
+        // 🌟 动态匹配出这个商品的种类名称 (Category Name) 供前台显示
+        const matchedCategory = categories.value.find(c => String(c.id) === String(item.categoryId))
+        const catName = matchedCategory ? matchedCategory.name : 'General'
 
         return {
           ...item,
+          categoryName: catName, // 🌟 把大类名字加进数据里
+          specifics: item.specifics || '', 
           coverImage: cover,
           conditionText: conditionMap[item.condition] || 'Good',
           userAvatar: item.userAvatar || 'https://api.dicebear.com/7.x/micah/svg?seed=' + (item.userName || 'User'),
           userName: item.userName || 'User',
-          // 🌟 确保有默认值
           wishlistCount: item.wishlistCount || 0 
         }
       })
@@ -256,6 +298,7 @@ const scrollToProducts = () => {
 watch(
     () => route.query.keyword,
     (newVal) => {
+      searchKeyword.value = newVal || ''
       queryParams.keyword = newVal || ''
       queryParams.pageNum = 1 
       loadProducts()
@@ -263,16 +306,43 @@ watch(
 )
 
 onMounted(() => {
-  loadCategories()
-  if (route.query.keyword) {
-    queryParams.keyword = route.query.keyword
-  }
-  loadProducts()
+  // 注意：需要确保种类加载完了，再去加载商品，这样才能正确匹配到 Category 名字
+  loadCategories().then(() => {
+    loadProducts()
+  })
 })
 </script>
 
 <style scoped>
-/* 样式部分保持不变... */
+/* 🌟 防止遮挡，设置最大宽度 */
+.glass-tags { 
+  position: absolute; 
+  top: 15px; 
+  right: 15px; 
+  z-index: 2; 
+  display: flex; 
+  flex-direction: column; 
+  align-items: flex-end; 
+  gap: 6px; 
+  max-width: 60%;
+}
+.condition-tag { 
+  background: rgba(255, 255, 255, 0.9); 
+  backdrop-filter: blur(8px); 
+  color: #0f172a; 
+  padding: 6px 12px; 
+  border-radius: 12px; 
+  font-size: 12px; 
+  font-weight: 700; 
+  box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
+  text-align: right;
+}
+.specific-tag { 
+  background: rgba(79, 70, 229, 0.9); 
+  color: white; 
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
 .home-page { min-height: 100vh; background-color: #f4f7fb; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
 .hero-section { position: relative; height: calc(100vh - 60px); background-color: #f8fafc; overflow: hidden; display: flex; justify-content: center; align-items: center; }
 .blob { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.6; z-index: 1; animation: float 10s infinite ease-in-out alternate; }
@@ -288,20 +358,31 @@ onMounted(() => {
 .explore-btn { font-size: 1.1rem; padding: 15px 40px; border-radius: 50px; height: auto; background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%); border: none; box-shadow: 0 10px 20px rgba(79, 70, 229, 0.3); transition: all 0.3s; }
 .explore-btn:hover { transform: translateY(-3px); box-shadow: 0 15px 25px rgba(79, 70, 229, 0.4); }
 .main-content { padding-top: 40px; }
-.category-wrapper { background: white; padding: 20px 0; position: sticky; top: 60px; z-index: 10; box-shadow: 0 4px 20px rgba(0,0,0,0.03); margin-bottom: 40px; }
+.category-wrapper { background: white; padding: 30px 0 20px; position: sticky; top: 60px; z-index: 10; box-shadow: 0 4px 20px rgba(0,0,0,0.03); margin-bottom: 40px; }
+
+.search-wrapper { max-width: 700px; margin: 0 auto 30px auto; padding: 0 20px; }
+.custom-search-input { height: 50px; font-size: 16px; }
+.custom-search-input :deep(.el-input__wrapper) { border-radius: 25px 0 0 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.04); padding-left: 20px; border: 1px solid #f1f5f9; transition: all 0.3s; }
+.custom-search-input :deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 1px #4f46e5 inset, 0 4px 15px rgba(79, 70, 229, 0.1); }
+.custom-search-input :deep(.el-input-group__append) { border-radius: 0 25px 25px 0; background: #1e293b; color: white; border: none; padding: 0 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.04); transition: all 0.3s; }
+.custom-search-input :deep(.el-input-group__append:hover) { background: #3b82f6; cursor: pointer; }
+.search-btn { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 15px; color: white; }
+
 .category-filter { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; padding: 0 20px; max-width: 1200px; margin: 0 auto; }
 .filter-item { display: flex; align-items: center; gap: 6px; padding: 10px 24px; background: #f1f5f9; border-radius: 30px; cursor: pointer; font-weight: 600; font-size: 14px; color: #64748b; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid transparent; }
 .filter-item:hover { background: #e2e8f0; color: #0f172a; }
 .filter-item.active { background: #1e293b; color: white; box-shadow: 0 8px 16px rgba(30, 41, 59, 0.2); transform: translateY(-2px); }
+
 .products-container { max-width: 1250px; margin: 0 auto; padding: 0 20px 80px; }
 .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 30px; }
 .product-card { background: white; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.04); cursor: pointer; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-direction: column; border: 1px solid rgba(226, 232, 240, 0.6); }
 .product-card:hover { transform: translateY(-10px); box-shadow: 0 20px 30px rgba(0,0,0,0.1); }
-.card-image-wrapper { position: relative; height: 240px; width: 100%; overflow: hidden; background: #f8fafc; }
-.product-img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s ease; }
+
+/* 🌟 图片显示核心：使用 contain 和 padding 让图片完全展现 */
+.card-image-wrapper { position: relative; height: 240px; width: 100%; overflow: hidden; background: #ffffff; border-bottom: 1px solid rgba(226, 232, 240, 0.4); }
+.product-img { width: 100%; height: 100%; object-fit: contain; padding: 15px; box-sizing: border-box; transition: transform 0.6s ease; }
 .product-card:hover .product-img { transform: scale(1.08); }
-.glass-tags { position: absolute; top: 15px; right: 15px; z-index: 2; }
-.condition-tag { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(8px); color: #0f172a; padding: 6px 12px; border-radius: 12px; font-size: 12px; font-weight: 700; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+
 .cond-1 { color: #10b981; } .cond-4 { color: #f59e0b; }
 .campus-tag { position: absolute; bottom: 15px; left: 15px; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(8px); color: white; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 4px; z-index: 2; }
 .card-info { padding: 24px; flex: 1; display: flex; flex-direction: column; }
@@ -310,8 +391,13 @@ onMounted(() => {
 .currency { font-size: 14px; opacity: 0.8; }
 .likes { color: #64748b; font-size: 14px; display: flex; align-items: center; gap: 6px; background: #f1f5f9; padding: 4px 10px; border-radius: 12px; font-weight: 600; }
 .likes .el-icon { color: #f59e0b; }
-.title { font-size: 17px; color: #0f172a; margin-bottom: 20px; line-height: 1.5; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; flex: 1; }
-.seller-row { display: flex; align-items: center; gap: 12px; padding-top: 16px; border-top: 1px dashed #e2e8f0; }
+
+/* 🌟 商品大类标签的样式 */
+.category-badge-wrapper { margin-bottom: 8px; }
+.category-badge { font-size: 11px; font-weight: 700; color: #4f46e5; background: #e0e7ff; padding: 4px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; display: inline-block; }
+
+.title { font-size: 16px; color: #0f172a; margin-bottom: auto; line-height: 1.4; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.seller-row { display: flex; align-items: center; gap: 12px; padding-top: 16px; border-top: 1px dashed #e2e8f0; margin-top: 16px; }
 .seller-avatar { border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
 .seller-name { font-size: 14px; color: #475569; font-weight: 500; }
 .fade-in { animation: fadeIn 0.8s ease forwards; }

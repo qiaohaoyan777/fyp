@@ -6,6 +6,13 @@
         <p>Please enter your credit card details to complete the payment.</p>
       </div>
 
+      <div class="checkout-timer">
+        <el-icon class="timer-icon"><Timer /></el-icon>
+        <div class="timer-content">
+          <span>Time remaining to complete payment: <strong class="timer-text">{{ formattedTime }}</strong></span>
+        </div>
+      </div>
+
       <div class="order-summary">
         <span class="label">Amount to Pay:</span>
         <span class="amount">RM {{ amount || '0.00' }}</span>
@@ -13,9 +20,7 @@
 
       <el-card class="card-form-container" shadow="hover">
         <div class="card-icons">
-          
           <img src="@/assets/Visa.png" alt="Visa" class="card-icon" />
-         
           <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg" alt="Mastercard" class="card-icon" />
         </div>
 
@@ -83,10 +88,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { User, CreditCard, Lock } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+// 🌟 引入 Timer 图标
+import { User, CreditCard, Lock, Timer } from '@element-plus/icons-vue'
 import myAxios from "@/plugins/request.js"
 
 const route = useRoute()
@@ -105,32 +111,69 @@ const cardForm = reactive({
   cvv: ''
 })
 
-// 自定义的 Expiry Date 校验逻辑
+// 🌟 ====== 倒计时功能核心逻辑 ====== 🌟
+const timeLeft = ref(15 * 60) // 15分钟 = 900秒
+let timerInterval = null
+
+const formattedTime = computed(() => {
+  const m = Math.floor(timeLeft.value / 60).toString().padStart(2, '0')
+  const s = (timeLeft.value % 60).toString().padStart(2, '0')
+  return `${m}:${s}`
+})
+
+const startTimer = () => {
+  if (timerInterval) return
+  timerInterval = setInterval(() => {
+    if (timeLeft.value > 0) {
+      timeLeft.value--
+    } else {
+      handleTimeout()
+    }
+  }, 1000)
+}
+
+const stopTimer = () => {
+  if (timerInterval) {
+    clearInterval(timerInterval)
+    timerInterval = null
+  }
+}
+
+const handleTimeout = () => {
+  stopTimer()
+  ElMessageBox.alert(
+    'Payment session has expired. Please try purchasing again.',
+    'Timeout',
+    {
+      confirmButtonText: 'Return to Home',
+      type: 'warning',
+      showClose: false,
+      callback: () => {
+        // 超时直接踢回首页
+        router.replace('/')
+      }
+    }
+  )
+}
+// ===================================
+
 const validateExpiry = (rule, value, callback) => {
   if (!value) {
     return callback(new Error('Expiry date is required'))
   }
-  
-  // 移除输入中的空格和斜杠，提取纯数字
   const dateStr = value.replace(/\s+/g, '').replace('/', '')
-  
   if (!/^\d{4}$/.test(dateStr)) {
     return callback(new Error('Please enter a valid format (e.g., 12/26)'))
   }
-
   const month = parseInt(dateStr.substring(0, 2), 10)
   const year = parseInt(dateStr.substring(2, 4), 10)
 
-  // 校验月份 <= 12，且 >= 1
   if (month < 1 || month > 12) {
     return callback(new Error('Please enter a valid month.')) 
   }
-  
-  // 校验年份 >= 26
   if (year < 26) {
     return callback(new Error('Card has expired. Please check the year.')) 
   }
-
   callback()
 }
 
@@ -153,6 +196,12 @@ const rules = {
 }
 
 const handlePayment = async () => {
+  // 如果点击时已经超时，直接拦截
+  if (timeLeft.value <= 0) {
+    handleTimeout()
+    return
+  }
+
   if (!cardFormRef.value) return
   
   await cardFormRef.value.validate(async (valid) => {
@@ -172,6 +221,9 @@ const handlePayment = async () => {
            });
         }
 
+        // 🌟 支付成功，立刻停止定时器
+        stopTimer()
+
         ElMessage.success('Payment Successful! Thank you for your purchase.')
         router.push('/orders')
 
@@ -188,7 +240,15 @@ const handlePayment = async () => {
 onMounted(() => {
   if (!orderId.value) {
     ElMessage.warning('Order information missing.')
+  } else {
+    // 🌟 有订单信息则开启倒计时
+    startTimer()
   }
+})
+
+// 🌟 组件销毁时必须清除定时器
+onUnmounted(() => {
+  stopTimer()
 })
 </script>
 
@@ -209,7 +269,7 @@ onMounted(() => {
 
 .gateway-header {
   text-align: center;
-  margin-bottom: 30px;
+  margin-bottom: 25px;
 }
 
 .gateway-header h1 {
@@ -222,6 +282,44 @@ onMounted(() => {
   color: #64748b;
 }
 
+/* 🌟 倒计时横幅样式 */
+.checkout-timer {
+  background-color: #fff7e6;
+  border: 1px solid #ffd591;
+  padding: 12px 16px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.timer-icon {
+  font-size: 20px;
+  color: #fa8c16;
+}
+
+.timer-content {
+  font-size: 14px;
+  color: #d4380d;
+}
+
+.timer-text {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  margin-left: 4px;
+  color: #f5222d;
+}
+
+/* 原有样式保留 */
 .order-summary {
   display: flex;
   justify-content: space-between;
@@ -262,7 +360,7 @@ onMounted(() => {
 
 .card-icon {
   height: 24px;
-  width: auto; /* 保证图标比例不变形 */
+  width: auto;
   opacity: 0.8;
 }
 

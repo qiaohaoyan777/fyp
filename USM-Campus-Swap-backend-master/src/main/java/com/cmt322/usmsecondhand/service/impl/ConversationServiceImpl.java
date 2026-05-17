@@ -40,16 +40,28 @@ public class ConversationServiceImpl
             throw new BusinessException(ErrorCode.OPERATION_ERROR, "You cannot chat with yourself.");
         }
 
-        // 普通聊天，type = 1 (或者 null 兼容老数据)
+        // 🌟 核心修改：只看买家和卖家是否已经聊过天 (不管之前买的是哪个商品)
         Conversation c = this.getOne(
                 new QueryWrapper<Conversation>()
-                        .eq("goodsId", goodsId)
-                        .eq("buyerId", buyerId)
-                        .ne("type", 2) // 排除系统通知
+                        // 买家是你，卖家是他
+                        .and(wrapper -> wrapper.eq("buyerId", buyerId).eq("sellerId", sellerId)
+                                // 或者 买家是他，卖家是你 (你们互相发起的)
+                                .or().eq("buyerId", sellerId).eq("sellerId", buyerId))
+                        // 必须是普通聊天，排除系统通知
+                        .ne("type", 2) 
         );
 
-        if (c != null) return c.getId();
+        // 如果之前聊过，直接返回之前那个对话框的 ID，并且更新一下当前商品ID
+        if (c != null) {
+            // 如果最近聊的是这个商品，那可以直接返回；如果换了商品聊，更新一下关联的商品ID
+            if (!goodsId.equals(c.getGoodsId())) {
+                c.setGoodsId(goodsId);
+                this.updateById(c);
+            }
+            return c.getId();
+        }
 
+        // 如果从来没聊过，就新建一个全新的聊天框
         Conversation nc = new Conversation();
         nc.setGoodsId(goodsId);
         nc.setBuyerId(buyerId);

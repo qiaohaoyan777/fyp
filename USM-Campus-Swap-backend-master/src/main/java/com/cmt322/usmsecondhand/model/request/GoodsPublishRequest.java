@@ -17,6 +17,7 @@ public class GoodsPublishRequest {
     private List<String> images;
     private Integer condition;
     private String campus;
+    private String specifics;
     private List<Integer> contactTypes;
     
     /**

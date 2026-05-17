@@ -1,7 +1,6 @@
 <template>
   <div class="login-page">
     <div class="login-container">
-      <!-- 左侧欢迎区域 -->
       <div class="login-left">
         <div class="welcome-content">
           <h1>Welcome Back</h1>
@@ -23,7 +22,6 @@
         </div>
       </div>
 
-      <!-- 右侧登录表单 -->
       <div class="login-right">
         <div class="form-container">
           <div class="form-header">
@@ -39,11 +37,11 @@
               class="login-form"
               size="large"
           >
-            <el-form-item prop="userAccount" class="form-item">
+            <el-form-item prop="usmEmail" class="form-item">
               <el-input
-                  v-model="form.userAccount"
-                  placeholder="Enter your account"
-                  :prefix-icon="User"
+                  v-model="form.usmEmail"
+                  placeholder="your.email@student.usm.my"
+                  :prefix-icon="Message"
                   @keyup.enter="handleLogin"
               />
             </el-form-item>
@@ -79,7 +77,7 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Check, User, Lock } from '@element-plus/icons-vue'
+import { Check, User, Lock, Message } from '@element-plus/icons-vue' // 引入了 Message 图标
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
@@ -88,14 +86,26 @@ const formRef = ref()
 const loading = ref(false)
 
 const form = reactive({
-  userAccount: '',
+  //userAccount: '',
+  usmEmail: '',
   userPassword: ''
 })
 
 const rules = reactive({
-  userAccount: [
-    { required: true, message: 'Please enter your account', trigger: 'blur' },
-    { min: 4, message: 'Account must be at least 4 characters', trigger: 'blur' }
+  // 👇 把 userAccount 的校验换成了 usmEmail 专属校验
+  usmEmail: [
+    { required: true, message: 'Please enter your USM email', trigger: 'blur' },
+    { type: 'email', message: 'Please enter a valid email address', trigger: 'blur' },
+    {
+      validator: (rule, value, callback) => {
+        if (value && !value.toLowerCase().endsWith('.usm.my')) {
+          callback(new Error('Please use USM email (@usm.my) to login'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur'
+    }
   ],
   userPassword: [
     { required: true, message: 'Please enter your password', trigger: 'blur' },
@@ -115,8 +125,8 @@ const handleLogin = async () => {
     // 调用 store 登录
     const userData = await userStore.login(form)
 
-    // 成功
-    const username = userData.username || userData.userAccount || userData.name || form.userAccount
+    // 成功 (把备用的 userAccount 换成了 usmEmail)
+    const username = userData.username || userData.usmEmail || userData.name || form.usmEmail
     ElMessage.success(`Welcome back, ${username}!`)
 
     // 跳转首页

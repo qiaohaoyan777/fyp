@@ -24,14 +24,14 @@ import java.util.regex.Pattern;
 import static com.cmt322.usmsecondhand.constant.UserConstant.USER_LOGIN_STATE;
 
 /**
-* @author 米老头
-* @description 针对表【user(USM Secondhand Trading Platform User Table)】的数据库操作Service实现
-* @createDate 2025-11-22 14:08:16
-*/
+ * @author 米老头
+ * @description 针对表【user(USM Secondhand Trading Platform User Table)】的数据库操作Service实现
+ * @createDate 2025-11-22 14:08:16
+ */
 @Service
 @Slf4j
 public class UserServiceImpl extends ServiceImpl<UserMapper, User>
-    implements UserService{
+        implements UserService{
 
     @Resource
     private UserMapper userMapper;
@@ -76,30 +76,22 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         return false;
     }
 
-    // 👇 修改了参数，在末尾增加了 String emailCode
+    // 🌟 修改点 1：方法参数中彻底删除了 userAccount
     @Override
-    public long userRegister(String username, String userAccount, String userPassword,
+    public long userRegister(String username, String userPassword,
                              String checkPassword, String usmEmail, String campus,
                              String studentId, String school, String phone, String emailCode) {
-        // Validation (增加了对 emailCode 的非空校验)
-        if (StringUtils.isAnyBlank(username, userAccount, userPassword, checkPassword, emailCode)) {
+        // Validation (将 userAccount 从空值校验中移除，加入 usmEmail)
+        if (StringUtils.isAnyBlank(username, usmEmail, userPassword, checkPassword, emailCode)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "Required parameters (including verification code) cannot be empty");
         }
         if (username.length() > 20) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "Nickname cannot exceed 20 characters");
         }
-        if (userAccount.length() < 4) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Account is too short");
-        }
         if (userPassword.length() < 8 || checkPassword.length() < 8) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "Password is too short");
         }
-        // Account cannot contain special characters
-        String regex = "^[a-zA-Z0-9_]+$";
-        Matcher matcher = Pattern.compile(regex).matcher(userAccount);
-        if (!matcher.find()) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Account contains special characters");
-        }
+        
         // Passwords must match
         if (!userPassword.equals(checkPassword)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "Passwords do not match");
@@ -151,15 +143,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
             }
         }
 
-        // Account cannot be duplicated
-        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("userAccount", userAccount);
-        long count = this.count(queryWrapper);
-        if (count > 0) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Account already exists");
-        }
-
-        // USM email cannot be duplicated
+        // 🌟 修改点 2：移除了校验 userAccount 是否重复的代码，现在只校验 usmEmail
         QueryWrapper<User> emailWrapper = new QueryWrapper<>();
         emailWrapper.eq("usmEmail", usmEmail);
         long emailCount = this.count(emailWrapper);
@@ -192,10 +176,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
 
         User user = new User();
         user.setUsername(username);
-        user.setUserAccount(userAccount);
+        // 🌟 修改点 3：移除了 user.setUserAccount(userAccount);
         user.setUserPassword(dealPassword);
         user.setUsmEmail(usmEmail);
-        user.setEmailVerified(0); // 👇 验证通过，这里改为 0 表示已验证 (视你的数据库约定而定)
+        user.setEmailVerified(0); 
         user.setCampus(campus);
         user.setStudentId(studentId);
         user.setSchool(school);
@@ -210,59 +194,48 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "Registration failed");
         }
 
-        // 👇 注册成功后，立刻销毁内存中的验证码，防止重放攻击
+        // 注册成功后，立刻销毁内存中的验证码，防止重放攻击
         EMAIL_CODE_MAP.remove(usmEmail);
         EMAIL_CODE_EXPIRE_MAP.remove(usmEmail);
 
         return user.getId();
     }
 
-
+    // 🌟 修改点 4：参数 userAccount 变成了 usmEmail
     @Override
-    public User userLogin(String userAccount, String userPassword, HttpServletRequest request) {
-        // 1. 校验逻辑 (任何一项失败，直接抛出异常，不要返回 null)
-        if (StringUtils.isAnyBlank(userAccount, userPassword)) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Username or password cannot be empty.");
-        }
-        if (userAccount.length() < 4) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Account length must be at least 4 characters.");
+    public User userLogin(String usmEmail, String userPassword, HttpServletRequest request) {
+        // 1. 校验逻辑 (移除了 account 的特殊字符和长度限制)
+        if (StringUtils.isAnyBlank(usmEmail, userPassword)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Email or password cannot be empty.");
         }
         if (userPassword.length() < 8) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "Password length must be at least 8 characters");
         }
 
-        // 校验账户特殊字符
-        String validPattern = "[`~!@#$%^&*()+=|{}':;',\\\\[\\\\].<>/?~！@#￥%……&*（）——+|{}【】‘；：”“’。，、？]";
-        Matcher matcher = Pattern.compile(validPattern).matcher(userAccount);
-        if (matcher.find()) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "The account contains illegal characters.");
-        }
-
         // 2. 加密
         String encryptPassword = DigestUtils.md5DigestAsHex((SALT + userPassword).getBytes());
 
-        // 查询用户是否存在
+        // 3. 🌟 核心：使用 usmEmail 进行查询
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("userAccount", userAccount);
+        queryWrapper.eq("usmEmail", usmEmail);
         queryWrapper.eq("userPassword", encryptPassword);
         User user = userMapper.selectOne(queryWrapper);
 
         // 用户不存在或密码错误
         if (user == null) {
-            log.info("user login failed, userAccount cannot match userPassword");
-            // 这里必须抛出异常，告诉前端具体原因
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Incorrect username or password");
+            log.info("user login failed, usmEmail cannot match userPassword");
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "Incorrect email or password");
         }
 
         if (user.getIsDelete() != null && user.getIsDelete() == 1) {
-            log.warn("Login failed: Account is banned/deleted - {}", userAccount);
+            log.warn("Login failed: Account is banned/deleted - {}", usmEmail);
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "Account has been banned/deleted.");
         }
 
-        // 3. 用户脱敏
+        // 用户脱敏
         User safetyUser = getSafetyUser(user);
 
-        // 4. 记录用户的登录态
+        // 记录用户的登录态
         request.getSession().setAttribute(USER_LOGIN_STATE, safetyUser);
 
         return safetyUser;
@@ -284,7 +257,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         // 基本信息
         safetyUser.setId(originUser.getId());
         safetyUser.setUsername(originUser.getUsername());
-        safetyUser.setUserAccount(originUser.getUserAccount());
+        // 🌟 修改点 5：移除了 safetyUser.setUserAccount(originUser.getUserAccount());
         safetyUser.setAvatarUrl(originUser.getAvatarUrl());
         safetyUser.setGender(originUser.getGender());
         safetyUser.setPhone(originUser.getPhone());
@@ -327,8 +300,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         if (userId <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        // todo 补充校验，如果用户没有传任何要更新的值，就直接报错，不用执行 update 语句
-        // 如果是管理员，允许更新任意用户
         // 如果不是管理员，只允许更新当前（自己的）信息
         if (!isAdmin(loginUser) && userId != loginUser.getId()) {
             throw new BusinessException(ErrorCode.NO_AUTH);
@@ -377,8 +348,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         return loginUser != null && loginUser.getUserRole() == UserConstant.ADMIN_ROLE;
     }
 
-    // 在 UserServiceImpl 中实现
-    // UserServiceImpl.java
     @Override
     public boolean updatePassword(String oldPassword, String newPassword, User loginUser) {
         // 1. 参数校验
@@ -414,5 +383,4 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
 
         return this.updateById(user);
     }
-
 }

@@ -34,7 +34,7 @@ public class UserController {
     @Resource
     private UserService userService;
 
-    // 👇 新增的接口：让前端调用来发送邮箱验证码
+    // 👇 发送邮箱验证码
     @GetMapping("/send-code")
     public BaseResponse<String> sendCode(@RequestParam String email) {
         if (StringUtils.isBlank(email)) {
@@ -48,13 +48,14 @@ public class UserController {
         }
     }
 
+    // 🌟 修改点 1：清理注册接口中的 userAccount
     @PostMapping("/register")
     public BaseResponse<Long> userRegister(@RequestBody UserRegisterRequest userRegisterRequest) {
         if (userRegisterRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
         String username = userRegisterRequest.getUserName();
-        String userAccount = userRegisterRequest.getUserAccount();
+        // 删除了 String userAccount = ...
         String userPassword = userRegisterRequest.getUserPassword();
         String checkPassword = userRegisterRequest.getCheckPassword();
         String usmEmail = userRegisterRequest.getUsmEmail();
@@ -62,29 +63,34 @@ public class UserController {
         String studentId = userRegisterRequest.getStudentId();
         String school = userRegisterRequest.getSchool();
         String phone = userRegisterRequest.getPhone();
-        String emailCode = userRegisterRequest.getEmailCode(); // 👇 接收验证码
+        String emailCode = userRegisterRequest.getEmailCode(); 
 
-        // 👇 将 emailCode 也加入非空校验中
-        if (StringUtils.isAnyBlank(username, userAccount, userPassword, checkPassword, usmEmail, campus, school, emailCode)) {
+        // 移除了 userAccount 的非空校验
+        if (StringUtils.isAnyBlank(username, userPassword, checkPassword, usmEmail, campus, school, emailCode)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "Required parameters missing");
         }
         
-        // 👇 将 emailCode 传给 Service 处理
-        long result = userService.userRegister(username, userAccount, userPassword, checkPassword, usmEmail, campus, studentId, school, phone, emailCode);
+        // 移除了传给 service 层的 userAccount 参数
+        long result = userService.userRegister(username, userPassword, checkPassword, usmEmail, campus, studentId, school, phone, emailCode);
         return ResultUtils.success(result);
     }
 
+    // 🌟 修改点 2：将登录接口的账号改为邮箱
     @PostMapping("/login")
     public BaseResponse<User> userLogin(@RequestBody UserLoginRequest userLoginRequest, HttpServletRequest request) {
         if (userLoginRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        String userAccount = userLoginRequest.getUserAccount();
+        // 将 userAccount 改成了 usmEmail
+        String usmEmail = userLoginRequest.getUsmEmail();
         String userPassword = userLoginRequest.getUserPassword();
-        if (StringUtils.isAnyBlank(userAccount, userPassword)) {
+        
+        if (StringUtils.isAnyBlank(usmEmail, userPassword)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        User user = userService.userLogin(userAccount, userPassword, request);
+        
+        // 传给 service 层的参数改为 usmEmail
+        User user = userService.userLogin(usmEmail, userPassword, request);
         return ResultUtils.success(user);
     }
 
@@ -111,7 +117,6 @@ public class UserController {
             throw new BusinessException(ErrorCode.NOT_LOGIN);
         }
         long userId = currentUser.getId();
-        // TODO 校验用户是否合法
 
         User user = userService.getById(userId);
         User safetyUser = userService.getSafetyUser(user);
@@ -135,8 +140,7 @@ public class UserController {
         User user = new User();
         user.setId(loginUser.getId()); // 必填：ID
 
-        // 3. 🛡️ 手动赋值 (放弃 BeanUtils，手动写最稳)
-        // 只有当前端传了值，我们才更新字段
+        // 3. 🛡️ 手动赋值
         if (userUpdateRequest.getAvatarUrl() != null) {
             user.setAvatarUrl(userUpdateRequest.getAvatarUrl());
         }
@@ -163,7 +167,6 @@ public class UserController {
         }
 
         // 4. 执行更新
-        // 如果上面没有任何一个 if 命中，MyBatis-Plus 还是会报错，所以最好加个判断
         boolean result = userService.updateById(user);
 
         if (!result) {
@@ -189,7 +192,6 @@ public class UserController {
         return ResultUtils.success(b);
     }
 
-    // UserController.java
     @PostMapping("/change-password")
     public BaseResponse<Boolean> changePassword(@RequestBody ChangePasswordRequest changePasswordRequest,
                                                 HttpServletRequest request) {
@@ -242,13 +244,8 @@ public class UserController {
         // 使用 UpdateWrapper 强制更新
         UpdateWrapper<User> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("id", request.getId());
-
-        // 强制设置 isDelete 字段 (注意：这里 "isDelete" 要对应数据库里的列名)
-        // 如果数据库列名是 is_delete，请写 "is_delete"；如果是 isDelete，就写 "isDelete"
-        // 既然报错信息里是 WHERE ... isDelete=0，说明你的列名很可能就是 "isDelete"
         updateWrapper.set("isDelete", request.getStatus());
 
-        // 使用 update(null, wrapper) 方法，而不是 updateById
         return ResultUtils.success(userService.update(null, updateWrapper));
     }
 
