@@ -56,6 +56,12 @@ public class Conversation implements Serializable {
     private String itemName;
 
     /**
+     * 临时字段：对方的 ID
+     */
+    @TableField(exist = false)
+    private Long targetId;
+    
+    /**
      * 临时字段：对方的名字
      */
     @TableField(exist = false)

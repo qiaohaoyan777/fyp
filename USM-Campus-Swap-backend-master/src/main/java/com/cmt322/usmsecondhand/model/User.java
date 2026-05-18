@@ -111,4 +111,9 @@ public class User implements Serializable {
      * Default address for express delivery
      */
     private String address;
+
+    /**
+     * 管理员警告信息
+     */
+    private String warningMsg;
 }

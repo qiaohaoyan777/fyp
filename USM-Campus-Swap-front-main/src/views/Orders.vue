@@ -19,6 +19,7 @@
           role="buyer" 
           @open-review="handleOpenReview" 
           @view-review="handleViewReview" 
+          @contact-seller="handleContact"
         />
       </el-tab-pane>
 
@@ -29,7 +30,12 @@
             <span>My Sales</span>
           </span>
         </template>
-        <OrderList :orders="orderList" :loading="loading" role="seller" />
+        <OrderList 
+          :orders="orderList" 
+          :loading="loading" 
+          role="seller" 
+          @contact-seller="handleContact"
+        />
       </el-tab-pane>
     </el-tabs>
 
@@ -105,7 +111,6 @@ const activeTab = ref('buyer')
 const loading = ref(false)
 const orderList = ref([])
 
-// 提交评价状态
 const reviewDialogVisible = ref(false)
 const submittingReview = ref(false)
 const reviewForm = ref({
@@ -115,7 +120,6 @@ const reviewForm = ref({
   content: ''
 })
 
-// 🌟 查看评价状态
 const viewReviewDialogVisible = ref(false)
 const currentViewReview = ref({ rating: 5, content: '' })
 
@@ -171,7 +175,6 @@ const handleOpenReview = (order) => {
   reviewDialogVisible.value = true
 }
 
-// 🌟 新增：处理查看评价逻辑
 const handleViewReview = (order) => {
   currentViewReview.value = {
     rating: order.reviewRating || 5,
@@ -198,6 +201,37 @@ const submitReview = async () => {
   }
 }
 
+// 🌟 终极修复：配合你高强度的后端接口，只传 goodsId
+const handleContact = async (order) => {
+  try {
+    // 找出当前订单对应的商品 ID
+    const goodsId = order.goodsId || order.id; 
+    
+    if (!goodsId) {
+      ElMessage.error('Item information is missing!');
+      return;
+    }
+
+    console.log("准备打开聊天，传入的商品ID是:", goodsId);
+
+    // 🌟 最关键的一行：把路径改成 /open，并且用 ?goodsId= 的形式满足后端的 @RequestParam
+    const res = await myAxios.post(`/conversation/open?goodsId=${goodsId}`);
+    
+    // 此时后端返回的是你的 conversationId。这里兼容 Axios 拦截器的解包结构
+    const conversationId = res.data || res; 
+    
+    if (conversationId) {
+      router.push(`/messages?id=${conversationId}`);
+    } else {
+      ElMessage.error('Failed to get conversation ID');
+    }
+    
+  } catch (error) {
+    console.error('Failed to start conversation:', error);
+    ElMessage.error('Cannot connect right now. Please try again.');
+  }
+}
+
 onMounted(() => {
   fetchOrders()
 })
@@ -216,7 +250,6 @@ onMounted(() => {
 .content-item { display: flex; flex-direction: column; gap: 10px; }
 .label { font-weight: bold; color: #4b5563; }
 
-/* 🌟 新增：展示留言内容的灰色圆角框 */
 .review-content-box {
   background: #f3f4f6;
   padding: 12px;
@@ -224,6 +257,6 @@ onMounted(() => {
   color: #374151;
   font-size: 14px;
   line-height: 1.5;
-  white-space: pre-wrap; /* 保持换行格式 */
+  white-space: pre-wrap;
 }
 </style>

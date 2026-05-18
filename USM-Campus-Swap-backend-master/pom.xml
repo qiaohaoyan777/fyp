@@ -42,6 +42,8 @@
             <version>3.5.14</version>
         </dependency>
 
+        
+
         <!-- 分页插件依赖（解决 PaginationInnerInterceptor 爆红） -->
         <dependency>
             <groupId>com.baomidou</groupId>

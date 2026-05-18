@@ -30,14 +30,11 @@
             </div>
             <p class="conversation-preview">{{ conversation.lastMessage }}</p>
             <div class="conversation-meta">
-              
               <el-tag v-if="conversation.isSystem" type="info" size="small" effect="dark">System</el-tag>
-              
               <template v-else>
                 <el-tag v-if="conversation.isOpponentSeller" type="success" size="small">Seller</el-tag>
                 <el-tag v-else type="warning" size="small">Buyer</el-tag>
               </template>
-              
               <el-badge v-if="conversation.unread > 0" :value="conversation.unread" :max="99" class="unread-badge" />
             </div>
           </div>
@@ -60,12 +57,10 @@
             <el-avatar :size="40" :src="activeConversation.avatar" />
             <div class="user-details">
               <h3>{{ activeConversation.name }}</h3>
-              
               <p class="user-status" v-if="activeConversation.isSystem">
                 <span class="status-dot online"></span>
                 24/7 Active
               </p>
-              
             </div>
           </div>
         </div>
@@ -87,40 +82,58 @@
 
         <div class="messages-container" ref="messagesContainer">
           <template v-for="(message, index) in messages" :key="message.id">
-            
             <div class="time-divider" v-if="showTimestamp(index)">
               {{ formatTime(message.timestamp) }}
             </div>
-
             <div :class="['message-wrapper', message.sender === 'me' ? 'sent' : 'received']">
               <el-avatar
                   v-if="message.sender !== 'me'"
                   :size="32"
-                  :src="activeConversation.avatar"
+                  :src="message.senderAvatar || activeConversation.avatar"
                   class="message-avatar"
               />
-              <div class="message-content">
-                <p class="message-text">{{ message.content }}</p>
+              <div class="message-content" :class="{ 'is-image': message.type === 2 }">
+                <p class="message-text" v-if="message.type === 1 || !message.type">{{ message.content }}</p>
+                <el-image
+                    v-else-if="message.type === 2"
+                    :src="message.content"
+                    :preview-src-list="[message.content]"
+                    class="message-image"
+                    fit="cover"
+                    hide-on-click-modal
+                />
               </div>
             </div>
-            
           </template>
         </div>
 
         <div class="message-input-container">
           <div class="input-actions">
-            <el-button type="text" class="action-btn" @click="ElMessage.info('Feature coming soon!')">
-              <el-icon><Picture /></el-icon>
+            <input type="file" ref="imageInput" accept="image/*" style="display: none" @change="handleImageUpload" />
+            
+            <el-button link class="action-btn" @click="triggerImageUpload" :disabled="activeConversation.isSystem">
+               <el-icon><Picture /></el-icon>
             </el-button>
-            <el-button type="text" class="action-btn">
-              <el-icon><Files /></el-icon>
-            </el-button>
+            
+            <el-popover placement="top-start" :width="280" trigger="click" :disabled="activeConversation.isSystem">
+              <template #reference>
+                <el-button link class="action-btn" :disabled="activeConversation.isSystem">
+                  <span style="font-size: 20px; line-height: 1;">😊</span>
+                </el-button>
+              </template>
+              <div class="emoji-picker">
+                <span v-for="emoji in emojiList" :key="emoji" class="emoji-item" @click="addEmoji(emoji)">
+                  {{ emoji }}
+                </span>
+              </div>
+            </el-popover>
           </div>
+          
           <el-input
               v-model="newMessage"
               type="textarea"
               :rows="2"
-              :placeholder="activeConversation.isSystem ? 'You cannot reply to system messages.' : 'Type a message...'"
+              :placeholder="activeConversation.isSystem ? 'System Message (Cannot Reply)' : 'Type a message...'"
               :disabled="activeConversation.isSystem"
               :maxlength="500"
               show-word-limit
@@ -145,7 +158,7 @@
 import { ref, computed, onMounted, nextTick, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ChatDotRound, Search, Box, Picture, Files, Promotion } from '@element-plus/icons-vue'
+import { ChatDotRound, Search, Box, Picture, Promotion } from '@element-plus/icons-vue'
 import request from '@/plugins/request.js'
 import { useUserStore } from '@/stores/user'
 
@@ -164,6 +177,48 @@ const localPrevUnread = ref(-1)
 const sendSound = new Audio('https://cdn.jsdelivr.net/npm/botpress@10.29.0/lib/web/audio/notification.mp3')
 const receiveSound = new Audio('https://cdn.jsdelivr.net/npm/whatsapp-notification-sound@1.0.0/notification.mp3')
 
+const emojiList = ['😀','😂','🤣','😊','😍','😘','😁','😉','😎','😭','😡','👍','👎','❤️','🔥','🎉','👏','🤔','🙌','🙏']
+
+const addEmoji = (emoji) => {
+  newMessage.value += emoji
+}
+
+const imageInput = ref(null)
+const triggerImageUpload = () => {
+  imageInput.value.click()
+}
+
+const handleImageUpload = async (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+  const formData = new FormData()
+  formData.append('file', file)
+
+  try {
+    ElMessage.info('Uploading image...')
+    const res = await request.post('/file/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    const imageUrl = res.data || res
+    if (!imageUrl) throw new Error('Failed to parse upload URL')
+
+    const msg = {
+      conversationId: activeConversation.value.id,
+      content: imageUrl,
+      type: 2 
+    }
+    await request.post('/message/send', msg)
+    try { sendSound.currentTime = 0; sendSound.volume = 0.5; sendSound.play() } catch(e) { }
+
+    await loadMessages(activeConversation.value.id, false)
+    loadConversations()
+  } catch (error) {
+    ElMessage.error('Failed to send image!')
+  } finally {
+    event.target.value = '' 
+  }
+}
+
 const getUserId = () => {
   const storedUser = localStorage.getItem('user')
   return storedUser ? JSON.parse(storedUser).id : 0
@@ -172,10 +227,10 @@ const userId = ref(getUserId())
 let pollingTimer = null
 
 const showTimestamp = (index) => {
-  if (index === 0) return true;
-  const prevTime = new Date(messages.value[index - 1].timestamp).getTime();
-  const currTime = new Date(messages.value[index].timestamp).getTime();
-  return (currTime - prevTime) > 5 * 60 * 1000;
+  if (index === 0) return true
+  const prevTime = new Date(messages.value[index - 1].timestamp).getTime()
+  const currTime = new Date(messages.value[index].timestamp).getTime()
+  return (currTime - prevTime) > 5 * 60 * 1000
 }
 
 const filteredConversations = computed(() => {
@@ -189,47 +244,46 @@ const filteredConversations = computed(() => {
 const loadConversations = async () => {
   try {
     const res = await request.get('/conversation/my')
-    let totalUnreadCount = 0;
+    let totalUnreadCount = 0
 
-    conversations.value = res.map(c => {
-      const currentUnread = c.unreadCount || 0;
-      totalUnreadCount += currentUnread;
+    let realData = []
+    if (Array.isArray(res)) realData = res
+    else if (res && Array.isArray(res.data)) realData = res.data
+    else if (res && Array.isArray(res.records)) realData = res.records
 
-      // 🌟 核心判断：如果没有真实名字，或者是系统发送者（比如ID为0），判定为系统消息
-      const isSystemMsg = !c.targetName || c.targetName === 'Unknown User' || Number(c.targetId) === 0;
-      
-      const iAmSeller = Number(userId.value) === Number(c.sellerId);
+    conversations.value = realData.map(c => {
+      const currentUnread = c.unreadCount || 0
+      totalUnreadCount += currentUnread
+
+      // 🌟 核心判断：如果后端传来了 targetName，且不为空，它就是真实对话！
+      const isSystemMsg = !c.targetName || c.targetName === 'Unknown User' || c.targetName === 'System Notification'
+      const iAmSeller = Number(userId.value) === Number(c.sellerId)
 
       return {
         id: Number(c.id),
         name: isSystemMsg ? 'System Notification' : c.targetName,
-        // 系统消息使用官方铃铛头像
         avatar: isSystemMsg ? 'https://img.icons8.com/color/48/appointment-reminders--v1.png' : (c.targetAvatar || 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png'),
         lastMessage: c.lastMessage,
-        lastTime: c.lastTime,
+        lastTime: c.lastTime || c.updateTime || new Date(),
         unread: currentUnread, 
         isOpponentSeller: !iAmSeller, 
-        isSystem: isSystemMsg, // 记录身份
+        isSystem: isSystemMsg, 
         itemId: c.goodsId,
         itemName: c.itemName || c.goodsName || c.title || 'Product',
       }
     })
 
-    if (localPrevUnread.value !== -1 && totalUnreadCount > localPrevUnread.value) {
-      try {
-        receiveSound.currentTime = 0; 
-        receiveSound.volume = 0.6;
-        receiveSound.play();
-      } catch(e) { 
-        console.warn('浏览器防打扰机制拦截了声音'); 
-      }
+    // 同步更新 activeConversation
+    if (activeConversation.value) {
+      const updatedConv = conversations.value.find(c => c.id === activeConversation.value.id)
+      if (updatedConv) activeConversation.value = updatedConv
     }
-    
-    localPrevUnread.value = totalUnreadCount;
 
-    if (userStore?.setTotalUnread) {
-      userStore.setTotalUnread(totalUnreadCount);
+    if (localPrevUnread.value !== -1 && totalUnreadCount > localPrevUnread.value) {
+      try { receiveSound.currentTime = 0; receiveSound.volume = 0.6; receiveSound.play() } catch(e) {}
     }
+    localPrevUnread.value = totalUnreadCount
+    if (userStore?.setTotalUnread) userStore.setTotalUnread(totalUnreadCount)
   } catch (error) {
     console.error('Failed to load conversations', error)
   }
@@ -242,19 +296,13 @@ const selectConversation = async (conversationId) => {
 
   const unreadCount = activeConversation.value.unread
   if (unreadCount > 0) {
-    activeConversation.value.unread = 0;
-    
+    activeConversation.value.unread = 0
     if (userStore?.setTotalUnread) {
-      const newTotal = Math.max(0, userStore.totalUnread - unreadCount);
-      userStore.setTotalUnread(newTotal);
-      localPrevUnread.value = newTotal; 
+      const newTotal = Math.max(0, userStore.totalUnread - unreadCount)
+      userStore.setTotalUnread(newTotal)
+      localPrevUnread.value = newTotal 
     }
-    
-    try {
-      await request.post(`/message/clearUnread?conversationId=${conversationId}`)
-    } catch (e) {
-      console.error(e)
-    }
+    try { await request.post(`/message/clearUnread?conversationId=${conversationId}`) } catch (e) {}
   }
   await loadMessages(conversationId, false)
 }
@@ -262,49 +310,43 @@ const selectConversation = async (conversationId) => {
 const loadMessages = async (conversationId, isPolling = false) => {
   try {
     const res = await request.get('/message/list', { params: { conversationId } })
-    if (!res) return
     
+    let realData = []
+    if (Array.isArray(res)) realData = res
+    else if (res && Array.isArray(res.data)) realData = res.data
+    else if (res && Array.isArray(res.records)) realData = res.records
+    else if (res && res.data && Array.isArray(res.data.records)) realData = res.data.records
+
     const oldLength = messages.value.length 
-    messages.value = res.map(m => ({
+    
+    messages.value = realData.map(m => ({
       id: m.id,
       content: m.content,
-      sender: m.senderId === userId.value ? 'me' : 'them',
-      timestamp: m.createTime
+      type: m.type, 
+      sender: Number(m.senderId) === Number(userId.value) ? 'me' : 'them',
+      timestamp: m.createTime || m.sendTime || new Date(),
+      senderName: m.senderName, // 后端缝合的发送者名字
+      senderAvatar: m.senderAvatar // 后端缝合的发送者头像
     }))
 
     if (messages.value.length > oldLength) {
       scrollToBottom()
-      
       if (isPolling && activeConversation.value?.id === conversationId) {
-        try {
-          receiveSound.currentTime = 0; 
-          receiveSound.volume = 0.6; 
-          receiveSound.play();
-        } catch(e) {}
+        try { receiveSound.currentTime = 0; receiveSound.volume = 0.6; receiveSound.play() } catch(e) {}
       }
     }
   } catch (error) {
-    if (!isPolling) console.error(error)
+    if (!isPolling) console.error("Load messages error:", error)
   }
 }
 
 const sendMessage = async () => {
   if (!newMessage.value.trim() || !activeConversation.value || activeConversation.value.isSystem) return
-  const msg = {
-    conversationId: activeConversation.value.id,
-    content: newMessage.value.trim(),
-    type: 1
-  }
+  const msg = { conversationId: activeConversation.value.id, content: newMessage.value.trim(), type: 1 }
   try {
     await request.post('/message/send', msg)
     newMessage.value = ''
-    
-    try {
-      sendSound.currentTime = 0;
-      sendSound.volume = 0.5;
-      sendSound.play();
-    } catch(e) { }
-
+    try { sendSound.currentTime = 0; sendSound.volume = 0.5; sendSound.play() } catch(e) { }
     await loadMessages(activeConversation.value.id, false)
     loadConversations()
   } catch (error) {
@@ -317,14 +359,11 @@ const scrollToBottom = () => {
     if (messagesContainer.value) {
       setTimeout(() => {
         if (messagesContainer.value) {
-          messagesContainer.value.scrollTo({
-            top: messagesContainer.value.scrollHeight,
-            behavior: 'smooth'
-          });
+          messagesContainer.value.scrollTo({ top: messagesContainer.value.scrollHeight, behavior: 'smooth' })
         }
-      }, 50); 
+      }, 50) 
     }
-  });
+  })
 }
 
 const formatTime = (timestamp) => {
@@ -335,17 +374,14 @@ const formatTime = (timestamp) => {
 const startPolling = () => {
   pollingTimer = setInterval(() => {
     loadConversations()
-    if (activeConversation.value) {
-      loadMessages(activeConversation.value.id, true)
-    }
+    if (activeConversation.value) loadMessages(activeConversation.value.id, true)
   }, 3000) 
 }
 
 onMounted(async () => {
-  await loadConversations()
-  if (route.query.conversationId) {
-    selectConversation(route.query.conversationId)
-  }
+  await loadConversations() 
+  const targetId = route.query.id 
+  if (targetId) await selectConversation(targetId) 
   startPolling()
 })
 
@@ -355,9 +391,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* -----------------------------------------------------------
-   CSS 样式保持不变
-   ----------------------------------------------------------- */
 .messages-page {
   display: grid;
   grid-template-columns: 320px 1fr;
@@ -563,14 +596,30 @@ onUnmounted(() => {
   border-radius: 12px;
   font-size: 14px;
   line-height: 1.5;
+  word-break: break-word; 
 }
 
-.sent .message-content {
+.message-content.is-image {
+  padding: 5px;
+  background: transparent !important;
+  border: none;
+}
+
+.message-image {
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid #e5e7eb;
+  display: block;
+}
+
+.sent .message-content:not(.is-image) {
   background: #3b82f6;
   color: white;
 }
 
-.received .message-content {
+.received .message-content:not(.is-image) {
   background: white;
   color: #1f2937;
 }
@@ -583,24 +632,57 @@ onUnmounted(() => {
 }
 
 .message-input-container {
-  padding: 20px 25px;
+  padding: 10px 25px 20px 25px;
   background: #fff;
   border-top: 1px solid #e5e7eb;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .input-actions {
   display: flex;
-  gap: 15px;
+  gap: 5px;
+}
+
+.action-btn {
+  font-size: 20px;
+  padding: 4px 8px;
+  color: #6b7280;
+}
+
+.action-btn:hover {
+  color: #3b82f6;
 }
 
 .send-btn {
   align-self: flex-end;
   border-radius: 10px;
+  padding: 8px 20px;
 }
 
 .messages-container::-webkit-scrollbar { width: 5px; }
 .messages-container::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
+
+.emoji-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.emoji-item {
+  font-size: 24px;
+  cursor: pointer;
+  transition: transform 0.2s, background-color 0.2s;
+  padding: 4px;
+  border-radius: 6px;
+}
+
+.emoji-item:hover {
+  transform: scale(1.1);
+  background-color: #f3f4f6;
+}
 </style>

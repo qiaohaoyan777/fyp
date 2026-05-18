@@ -45,7 +45,7 @@
         </div>
       </div>
 
-<div class="card-footer">
+      <div class="card-footer">
         
         <el-button 
           v-if="role === 'buyer' && order.orderStatus === 1 && !order.hasReview" 
@@ -91,8 +91,8 @@ const props = defineProps({
   role: String // 'buyer' or 'seller'
 })
 
-// 🌟 新增抛出 view-review 事件
-defineEmits(['open-review', 'view-review'])
+// 🌟 1. 补上 contact-seller 事件，声明 emit
+const emit = defineEmits(['open-review', 'view-review', 'contact-seller'])
 
 const getStatusType = (status) => {
   const map = { 0: 'warning', 1: 'success', 2: 'info' }
@@ -113,11 +113,10 @@ const goToGoods = (id) => {
   router.push(`/goods/${id}`)
 }
 
+// 🌟 2. 彻底修改 contactUser 的逻辑
 const contactUser = (order) => {
-  router.push({
-    path: '/messages',
-    query: { targetUserId: order.counterpartyId } 
-  })
+  // 不再自己跳转了，直接把带着所有信息的 order 丢给父组件（Orders.vue）去处理
+  emit('contact-seller', order)
 }
 
 const viewDetails = (orderId) => {
@@ -126,7 +125,6 @@ const viewDetails = (orderId) => {
 </script>
 
 <style scoped>
-/* 保持原有样式完全不变 */
 .order-card { border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 20px; transition: all 0.3s; background: #fff; }
 .order-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
 .card-header { background: #f9fafb; padding: 10px 15px; display: flex; justify-content: space-between; border-bottom: 1px solid #e5e7eb; font-size: 13px; color: #6b7280; border-top-left-radius: 8px; border-top-right-radius: 8px; }

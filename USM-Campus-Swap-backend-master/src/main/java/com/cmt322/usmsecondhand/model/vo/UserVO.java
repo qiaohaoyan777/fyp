@@ -110,4 +110,9 @@ public class UserVO implements Serializable {
      * 在售商品总数
      */
     private Integer itemCount;
+
+    /**
+     * 系统警告信息
+     */
+    private String warningMsg;
 }

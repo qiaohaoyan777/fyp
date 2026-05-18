@@ -13,11 +13,13 @@ import com.cmt322.usmsecondhand.model.User;
 import com.cmt322.usmsecondhand.model.request.*;
 import com.cmt322.usmsecondhand.service.UserService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
 import org.apache.commons.lang3.StringUtils;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 import static com.cmt322.usmsecondhand.constant.UserConstant.USER_LOGIN_STATE;
 
@@ -48,14 +50,12 @@ public class UserController {
         }
     }
 
-    // 🌟 修改点 1：清理注册接口中的 userAccount
     @PostMapping("/register")
     public BaseResponse<Long> userRegister(@RequestBody UserRegisterRequest userRegisterRequest) {
         if (userRegisterRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
         String username = userRegisterRequest.getUserName();
-        // 删除了 String userAccount = ...
         String userPassword = userRegisterRequest.getUserPassword();
         String checkPassword = userRegisterRequest.getCheckPassword();
         String usmEmail = userRegisterRequest.getUsmEmail();
@@ -65,23 +65,19 @@ public class UserController {
         String phone = userRegisterRequest.getPhone();
         String emailCode = userRegisterRequest.getEmailCode(); 
 
-        // 移除了 userAccount 的非空校验
         if (StringUtils.isAnyBlank(username, userPassword, checkPassword, usmEmail, campus, school, emailCode)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "Required parameters missing");
         }
         
-        // 移除了传给 service 层的 userAccount 参数
         long result = userService.userRegister(username, userPassword, checkPassword, usmEmail, campus, studentId, school, phone, emailCode);
         return ResultUtils.success(result);
     }
 
-    // 🌟 修改点 2：将登录接口的账号改为邮箱
     @PostMapping("/login")
     public BaseResponse<User> userLogin(@RequestBody UserLoginRequest userLoginRequest, HttpServletRequest request) {
         if (userLoginRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        // 将 userAccount 改成了 usmEmail
         String usmEmail = userLoginRequest.getUsmEmail();
         String userPassword = userLoginRequest.getUserPassword();
         
@@ -89,17 +85,10 @@ public class UserController {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
         
-        // 传给 service 层的参数改为 usmEmail
         User user = userService.userLogin(usmEmail, userPassword, request);
         return ResultUtils.success(user);
     }
 
-    /**
-     * 用户注销
-     *
-     * @param request
-     * @return
-     */
     @PostMapping("/logout")
     public BaseResponse<Integer> userLogout(HttpServletRequest request) {
         if (request == null) {
@@ -123,10 +112,25 @@ public class UserController {
         return ResultUtils.success(safetyUser);
     }
 
+    // 🌟 新增：获取所有真实用户列表（管理员专用），彻底解决前端 404 报错！
+    @GetMapping("/list")
+    public BaseResponse<List<User>> listUsers(HttpServletRequest request) {
+        // 1. 严格校验管理员权限
+        if (!userService.isAdmin(request)) {
+            throw new BusinessException(ErrorCode.NO_AUTH, "Access Denied: Admins only");
+        }
+        // 2. 查询数据库中所有用户
+        List<User> userList = userService.list();
+        // 3. 安全脱敏（防止将所有用户的密码发给前端）
+        List<User> safeUserList = userList.stream()
+                .map(user -> userService.getSafetyUser(user))
+                .collect(Collectors.toList());
+                
+        return ResultUtils.success(safeUserList);
+    }
 
     @PostMapping("/update")
     public BaseResponse<String> updateUser(@RequestBody UserUpdateRequest userUpdateRequest, HttpServletRequest request) {
-
         if (userUpdateRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
@@ -136,11 +140,9 @@ public class UserController {
             throw new BusinessException(ErrorCode.NOT_LOGIN);
         }
 
-        // 2. 准备更新对象
         User user = new User();
-        user.setId(loginUser.getId()); // 必填：ID
+        user.setId(loginUser.getId()); 
 
-        // 3. 🛡️ 手动赋值
         if (userUpdateRequest.getAvatarUrl() != null) {
             user.setAvatarUrl(userUpdateRequest.getAvatarUrl());
         }
@@ -166,14 +168,12 @@ public class UserController {
             user.setAddress(userUpdateRequest.getAddress());
         }
 
-        // 4. 执行更新
         boolean result = userService.updateById(user);
 
         if (!result) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "Update failed");
         }
 
-        // 5. 刷新 Session
         User newUser = userService.getById(user.getId());
         request.getSession().setAttribute(UserConstant.USER_LOGIN_STATE, newUser);
 
@@ -199,9 +199,7 @@ public class UserController {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
 
-        // 获取当前登录用户
         User loginUser = userService.getLoginUser(request);
-
         boolean result = userService.updatePassword(
                 changePasswordRequest.getOldPassword(),
                 changePasswordRequest.getNewPassword(),
@@ -211,16 +209,12 @@ public class UserController {
         return ResultUtils.success(result);
     }
 
-    /**
-     * 分页获取用户列表（仅管理员）
-     */
     @GetMapping("/list/page")
     public BaseResponse<IPage<User>> listUserByPage(
             @RequestParam(defaultValue = "1") Integer current,
             @RequestParam(defaultValue = "10") Integer size,
             @RequestParam(required = false) String username,
             HttpServletRequest request) {
-        // 权限校验
         if (!userService.isAdmin(request)) {
             throw new BusinessException(ErrorCode.NO_AUTH);
         }
@@ -232,21 +226,85 @@ public class UserController {
         return ResultUtils.success(userService.page(userPage, queryWrapper));
     }
 
-    /**
-     * 更新用户状态（封禁/启用）
-     */
+    // 🌟 后端封禁用户的专用接口，注意它接收的参数是 status，修改的是 isDelete
     @PostMapping("/update/status")
     public BaseResponse<Boolean> updateUserStatus(@RequestBody UserStatusUpdateRequest request, HttpServletRequest httpRequest) {
         if (!userService.isAdmin(httpRequest)) {
             throw new BusinessException(ErrorCode.NO_AUTH);
         }
 
-        // 使用 UpdateWrapper 强制更新
         UpdateWrapper<User> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("id", request.getId());
         updateWrapper.set("isDelete", request.getStatus());
 
         return ResultUtils.success(userService.update(null, updateWrapper));
     }
-
+    /**
+     * 🚨 管理员功能：警告违规用户
+     */
+    /**
+     * 🚨 管理员功能：警告违规用户 (真实数据库写入版)
+     */
+    @PostMapping("/warn")
+    public BaseResponse<Boolean> warnUser(@RequestBody java.util.Map<String, Object> params) {
+        if (params.get("id") == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "缺少用户ID");
+        }
+        
+        Long id = Long.valueOf(params.get("id").toString());
+        String message = (String) params.get("message");
+        
+        // 🚀 1. 实例化一个只有 ID 和警告信息的 User 对象
+        // 注意：这里假设你的 User 实体类里已经加上了 warningMsg 字段
+        User updateUser = new User();
+        updateUser.setId(id);
+        updateUser.setWarningMsg(message); // 把前端传来的警告内容塞进去
+        
+        // 🚀 2. 真正写入数据库
+        // 注意：如果你的 service 叫别的名字，请改成你自己的 userService
+        boolean result = userService.updateById(updateUser);
+        
+        if (!result) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "警告发送失败，用户不存在");
+        }
+        
+        return ResultUtils.success(true);
+    }
+    /**
+     * 🚨 获取用户的最新状态（包含警告信息）
+     */
+    @GetMapping("/get")
+    public BaseResponse<User> getUserById(Long id) {
+        if (id == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "缺少用户ID");
+        }
+        // 直接从数据库生抠出最新数据返回，确保 warningMsg 绝对存在！
+        User user = userService.getById(id);
+        
+        // 为了安全，把密码抹掉再传给前端
+        if (user != null) {
+            user.setUserPassword(null);
+        }
+        return ResultUtils.success(user);
+    }
+    /**
+     * 🚨 用户自行清空警告信息（点击“我明白”后触发）
+     */
+    @PostMapping("/clearWarning")
+    public BaseResponse<Boolean> clearWarning(HttpServletRequest request) {
+        // 1. 获取当前登录用户
+        User loginUser = userService.getLoginUser(request);
+        if (loginUser == null) {
+            throw new BusinessException(ErrorCode.NOT_LOGIN);
+        }
+        
+        // 2. 强行把该用户的 warningMsg 设为空字符串
+        User user = new User();
+        user.setId(loginUser.getId());
+        user.setWarningMsg(""); // 👈 关键点：清空！
+        
+        // 3. 更新数据库
+        boolean result = userService.updateById(user);
+        return ResultUtils.success(result);
+    }
 }

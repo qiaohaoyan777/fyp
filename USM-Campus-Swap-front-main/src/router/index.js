@@ -25,7 +25,7 @@ const routes = [
         path: '/my-products',
         name: 'MyProducts',
         component: () => import('../views/MyProducts.vue'),
-        meta: {requiresAuth: true}
+        meta: { requiresAuth: true }
     },
     {
         path: '/payment/:orderId?', 
@@ -79,6 +79,17 @@ const routes = [
         name: 'Register',
         component: () => import('../views/Register.vue')
     },
+    /* 🌟 核心新增：管理员全功能控制台面板大本营路由 */
+    {
+        path: '/admin/dashboard',
+        name: 'AdminDashboard',
+        // 统一使用 @ 别名，确保路径绝对正确
+        component: () => import('@/views/admin/Dashboard.vue'),
+        meta: { 
+            requiresAuth: true, 
+            requiresAdmin: true 
+        }
+    },
     {
         path: '/admin/goods',
         name: 'AdminGoods',
@@ -110,11 +121,11 @@ const router = createRouter({
     }
 })
 
-// 3. 全局前置守卫
+// 全局前置守卫
 router.beforeEach(async (to, from, next) => {
     const userStore = useUserStore()
 
-    // 🌟 核心修复区：定义白名单，如果是去登录或注册，千万别再发请求查用户信息了！
+    // 定义白名单，如果是去登录或注册，千万别再发请求查用户信息了！
     const whiteList = ['/login', '/register'];
 
     // 1. 尝试获取用户信息 (只在没有 userInfo，且【不在白名单】时才查)
@@ -135,22 +146,28 @@ router.beforeEach(async (to, from, next) => {
         }
     }
 
-    // 管理员权限校验
+    // 🌟 3. 管理员权限核心校验：强力守护控制台
     if (to.meta.requiresAdmin) {
+        // 如果用户已登录，但身份状态字段 userRole 不是 1（代表不是管理员）
         if (userStore.userInfo?.userRole !== 1) {
-            ElMessage.error('Access Denied: Admin privileges required')
-            next('/') 
+            ElMessage.error('Access Denied: Admin privileges required!')
+            next('/') // 踢回商城首页
             return
         }
     }
 
-    // 3. 防止已登录用户重复访问登录页
+    // 4. 防止已登录用户重复访问登录页
     if (whiteList.includes(to.path) && userStore.userInfo) {
-        next('/')
+        // 🌟 核心逻辑：如果是管理员登录，就不让他去首页，直接送进控制台！
+        if (userStore.userInfo.userRole === 1) {
+            next('/admin/dashboard')
+        } else {
+            next('/')
+        }
         return
     }
 
-    // 4. 绿灯放行
+    // 5. 绿灯放行
     next()
 })
 

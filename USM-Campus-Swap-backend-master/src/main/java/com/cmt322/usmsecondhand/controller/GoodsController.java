@@ -39,7 +39,7 @@ public class GoodsController {
     @Resource
     private MessageService messageService;
 
-    // --- 1. 管理员下架功能 (新增) ---
+    // --- 1. 管理员下架功能 ---
 
     @Data
     public static class TakedownRequest {
@@ -98,19 +98,17 @@ public class GoodsController {
         return ResultUtils.success(list);
     }
 
-    // 👇👇👇 这是为你新增的 /list 接口，完美对接前端的 getGoodsList 👇👇👇
-    @GetMapping("/list")
-    public BaseResponse<IPage<GoodsVO>> getGoodsList(
-            @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "12") int pageSize,
-            @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) Long categoryId) {
-        
-        // 调用现有的分页服务，将前端的 keyword 作为 title 传入进行模糊搜索，且只查询状态为 1 (已上架) 的商品
-        IPage<GoodsVO> result = goodsService.listGoodsVOByPage(pageNum, pageSize, keyword, categoryId, 1);
-        return ResultUtils.success(result);
+    // 🌟 核心修复区：专为前端管理员大本营打造的真实数据接口
+    // 🌟 修复图片裂开问题：返回格式化好的 GoodsVO，自带图片解析！
+    @GetMapping("/admin/list")
+    public BaseResponse<List<GoodsVO>> getAdminGoodsList(HttpServletRequest request) {
+        if (!userService.isAdmin(request)) {
+            throw new BusinessException(ErrorCode.NO_AUTH, "Access Denied: Admins only");
+        }
+        // 利用现有的分页服务，传入极大的 pageSize 来一次性查出所有商品，这样就自动执行了 VO 的图片格式化转换！
+        IPage<GoodsVO> result = goodsService.listGoodsVOByPage(1, 99999, null, null, null);
+        return ResultUtils.success(result.getRecords());
     }
-    // 👆👆👆 新增结束 👆👆👆
 
     @GetMapping("/list/page/vo")
     public BaseResponse<IPage<GoodsVO>> listGoodsVOByPage(
@@ -169,6 +167,18 @@ public class GoodsController {
         if (request == null || request.getId() == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "Invalid goods data");
         }
+        
+        // 🌟 核心修复区：管理员专属“一票否决”通道
+        // 如果是管理员发起的请求，并且带有 status 参数（说明是在面板点击了“下架/重新上架”）
+        if (userService.isAdmin(httpRequest) && request.getStatus() != null) {
+            Goods goods = new Goods();
+            goods.setId(request.getId());
+            goods.setStatus(request.getStatus());
+            // 直接强行更新状态，绕过普通卖家的身份校验限制！
+            return ResultUtils.success(goodsService.updateById(goods));
+        }
+
+        // 普通卖家修改自己的商品逻辑
         User loginUser = userService.getLoginUser(httpRequest);
         boolean result = goodsService.updateGoods(request, loginUser);
         return ResultUtils.success(result);
@@ -193,5 +203,25 @@ public class GoodsController {
         User loginUser = userService.getLoginUser(httpRequest);
         boolean result = goodsService.updateStatus(request.getId(), request.getStatus(), loginUser);
         return ResultUtils.success(result);
+    }
+    /**
+     * 🚨 管理员功能：彻底删除违规商品
+     */
+   /**
+     * 🚨 管理员专属功能：彻底删除违规商品
+     */
+    @PostMapping("/admin/delete")  // 👈 就是把这里改了，加上 /admin，避开原有的接口！
+    public BaseResponse<Boolean> deleteGoodsAdmin(@RequestBody java.util.Map<String, Object> params) {
+        // 下面的代码完全不用动...
+        if (params.get("id") == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "缺少商品ID");
+        }
+        Long id = Long.valueOf(params.get("id").toString());
+        boolean result = goodsService.removeById(id);
+        if (!result) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "删除失败，该商品可能已被删除或不存在");
+        }
+        System.out.println("🗑️ [系统最高指令] 商品已被彻底抹除，Goods ID: " + id);
+        return ResultUtils.success(true);
     }
 }

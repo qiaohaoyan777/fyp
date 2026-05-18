@@ -24,7 +24,7 @@ import java.util.List;
  * 订单接口控制器
  */
 @RestController
-@RequestMapping("/order") // ★★★ 核心修改：改成 /order 以匹配前端和 404 报错路径 ★★★
+@RequestMapping("/order") 
 @Slf4j
 public class OrdersController {
 
@@ -33,6 +33,17 @@ public class OrdersController {
 
     @Resource
     private UserService userService;
+
+    // 🌟🌟🌟 新增：管理员专属全站订单拉取接口 🌟🌟🌟
+    @GetMapping("/admin/list")
+    public BaseResponse<List<Orders>> getAdminOrderList(HttpServletRequest request) {
+        if (!userService.isAdmin(request)) {
+            throw new BusinessException(ErrorCode.NO_AUTH, "Access Denied: Admins only");
+        }
+        // 直接查全表，返回给 Dashboard
+        List<Orders> list = orderService.list();
+        return ResultUtils.success(list);
+    }
 
     /**
      * 创建订单 (购买) - 单个商品流程
@@ -49,9 +60,8 @@ public class OrdersController {
 
     /**
      * 查询我的订单 (买家/卖家)
-     * @param role "buyer" or "seller"
      */
-    @GetMapping("/list") // 前端可能是 /order/list 或者 /order/my/list，请根据你实际前端调用调整
+    @GetMapping("/list")
     public BaseResponse<List<OrdersVO>> listOrders(@RequestParam(required = false) String role, HttpServletRequest request) {
         User loginUser = userService.getLoginUser(request);
         List<OrdersVO> list = orderService.listMyOrders(loginUser, role);
@@ -81,7 +91,6 @@ public class OrdersController {
             throw new BusinessException(ErrorCode.NOT_LOGIN);
         }
 
-        // 获取最新的用户信息（确保余额准确）
         User loginUser = userService.getById(sessionUser.getId());
         if (loginUser == null) {
             throw new BusinessException(ErrorCode.NULL_ERROR, "User not found");
@@ -93,17 +102,12 @@ public class OrdersController {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "Payment failed");
         }
 
-        // 更新 Session 中的用户信息 (余额变动)
         User updatedUser = userService.getById(loginUser.getId());
         httpRequest.getSession().setAttribute(UserConstant.USER_LOGIN_STATE, updatedUser);
 
         return ResultUtils.success(true);
     }
 
-    /**
-     * ★★★ 管理员分页获取订单列表 ★★★
-     * 对应前端: /api/order/list/page
-     */
     @GetMapping("/list/page")
     public BaseResponse<IPage<OrdersVO>> listOrderPage(
             @RequestParam(defaultValue = "1") Integer current,
@@ -112,29 +116,20 @@ public class OrdersController {
             @RequestParam(required = false) Integer status,
             HttpServletRequest request) {
 
-        // 1. 安全检查：必须是管理员
         if (!userService.isAdmin(request)) {
             throw new BusinessException(ErrorCode.NO_AUTH, "Admin access only");
         }
 
-        // 2. 调用 Service
         IPage<OrdersVO> orderPage = orderService.listOrderVOByPage(current, size, orderNo, status);
         return ResultUtils.success(orderPage);
     }
 
-    /**
-     * ★★★ 管理员取消订单 ★★★
-     * 对应前端 AdminOrderView 的取消按钮
-     */
     @PostMapping("/cancel/{id}")
     public BaseResponse<Boolean> cancelOrder(@PathVariable("id") Long id, HttpServletRequest request) {
-        // 1. 安全检查
         if (!userService.isAdmin(request)) {
             throw new BusinessException(ErrorCode.NO_AUTH);
         }
         User loginUser = userService.getLoginUser(request);
-
-        // 2. 调用 Service (复用现有的取消逻辑)
         boolean result = orderService.cancelOrder(id, loginUser);
         return ResultUtils.success(result);
     }

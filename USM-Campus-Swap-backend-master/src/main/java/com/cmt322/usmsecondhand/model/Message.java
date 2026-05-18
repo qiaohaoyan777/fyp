@@ -2,7 +2,7 @@ package com.cmt322.usmsecondhand.model;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableField; // 🌟 新增：引入字段映射注解
+import com.baomidou.mybatisplus.annotation.TableField; 
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.util.Date;
 import lombok.Data;
@@ -32,4 +32,21 @@ public class Message {
     private Integer isRead;
 
     private Date createTime;
+
+    // ==========================================
+    // 🚀 核心扩容：前端显示必备的“虚拟字段”
+    // exist = false 表示数据库表里不需要有这列，仅用于给前端传 JSON
+    // ==========================================
+    
+    /**
+     * 发送者真实姓名
+     */
+    @TableField(exist = false)
+    private String senderName;
+
+    /**
+     * 发送者真实头像
+     */
+    @TableField(exist = false)
+    private String senderAvatar;
 }

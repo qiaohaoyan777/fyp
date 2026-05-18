@@ -1,289 +1,302 @@
 <template>
-  <div class="login-page">
-    <div class="login-container">
-      <div class="login-left">
-        <div class="welcome-content">
-          <h1>Welcome Back</h1>
-          <p>Sign in to continue trading with USM Campus Swap</p>
-          <div class="features">
-            <div class="feature-item">
-              <el-icon><Check /></el-icon>
-              <span>Access your products</span>
-            </div>
-            <div class="feature-item">
-              <el-icon><Check /></el-icon>
-              <span>Manage your orders</span>
-            </div>
-            <div class="feature-item">
-              <el-icon><Check /></el-icon>
-              <span>Connect with buyers</span>
-            </div>
-          </div>
-        </div>
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <h2>Campus Swap</h2>
+        <p>Centralized Second-Hand Marketplace for USM Community</p>
       </div>
 
-      <div class="login-right">
-        <div class="form-container">
-          <div class="form-header">
-            <h2>Sign In</h2>
-            <p>Don't have an account? <router-link to="/register">Create one</router-link></p>
-          </div>
+      <el-form :model="loginForm" :rules="rules" ref="loginFormRef" label-position="top">
+        <el-form-item label="Student ID / Email" prop="userEmail">
+          <el-input 
+            v-model="loginForm.userEmail" 
+            placeholder="Please enter your student ID or email"
+            prefix-icon="User"
+          />
+        </el-form-item>
 
-          <el-form
-              :model="form"
-              :rules="rules"
-              ref="formRef"
-              label-width="0"
-              class="login-form"
-              size="large"
-          >
-            <el-form-item prop="usmEmail" class="form-item">
-              <el-input
-                  v-model="form.usmEmail"
-                  placeholder="your.email@student.usm.my"
-                  :prefix-icon="Message"
-                  @keyup.enter="handleLogin"
-              />
-            </el-form-item>
+        <el-form-item label="Password" prop="userPassword">
+          <el-input 
+            v-model="loginForm.userPassword" 
+            type="password" 
+            placeholder="Please enter password"
+            prefix-icon="Lock"
+            show-password
+            @keyup.enter="handleLogin"
+          />
+        </el-form-item>
 
-            <el-form-item prop="userPassword" class="form-item">
-              <el-input
-                  v-model="form.userPassword"
-                  placeholder="Enter your password"
-                  type="password"
-                  show-password
-                  :prefix-icon="Lock"
-                  @keyup.enter="handleLogin"
-              />
-            </el-form-item>
-
-            <el-button
-                type="primary"
-                size="large"
-                @click="handleLogin"
-                :loading="loading"
-                class="login-btn"
-            >
-              Sign In
-            </el-button>
-          </el-form>
+        <div class="form-options">
+          <el-checkbox v-model="rememberMe">Remember me</el-checkbox>
+          <el-link type="primary" :underlined="false" @click="handleForgotPassword">Forgot password?</el-link>
         </div>
+
+        <el-form-item class="submit-item">
+          <el-button 
+            type="primary" 
+            class="w-full login-btn" 
+            :loading="loading" 
+            @click="handleLogin"
+          >
+            Sign In
+          </el-button>
+        </el-form-item>
+      </el-form>
+
+      <div class="login-footer">
+        <span>Don't have an account? </span>
+        <el-link type="primary" :underlined="false" @click="router.push('/register')">Create one now</el-link>
+      </div>
+
+      <hr class="divider-line" />
+      
+      <div class="admin-portal-wrapper">
+        <button class="admin-portal-btn" @click="openAdminVerify">
+          <el-icon><Avatar /></el-icon> Admin Portal Access
+        </button>
       </div>
     </div>
+
+    <el-dialog
+      v-model="adminDialogVisible"
+      title="Admin Security Authentication"
+      width="400px"
+      append-to-body
+      destroy-on-close
+    >
+      <el-form :model="adminForm" :rules="adminRules" ref="adminFormRef" label-position="top">
+        <el-form-item label="Admin Account (USM Email)" prop="adminEmail">
+          <el-input v-model="adminForm.adminEmail" placeholder="Enter admin email" prefix-icon="User" />
+        </el-form-item>
+        <el-form-item label="Security Password" prop="adminPassword">
+          <el-input 
+            v-model="adminForm.adminPassword" 
+            type="password" 
+            placeholder="Enter security token" 
+            prefix-icon="Lock" 
+            show-password
+            @keyup.enter="handleAdminLogin"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="adminDialogVisible = false">Cancel</el-button>
+          <el-button type="info" :loading="adminLoading" @click="handleAdminLogin">Verify & Enter</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Check, User, Lock, Message } from '@element-plus/icons-vue' // 引入了 Message 图标
+import { User, Lock, Avatar } from '@element-plus/icons-vue'
+import myAxios from "@/plugins/request.js"
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const userStore = useUserStore()
-const formRef = ref()
+
+const loginFormRef = ref(null)
 const loading = ref(false)
+const rememberMe = ref(false)
+const loginForm = ref({ userEmail: '', userPassword: '' })
 
-const form = reactive({
-  //userAccount: '',
-  usmEmail: '',
-  userPassword: ''
-})
+const adminDialogVisible = ref(false)
+const adminLoading = ref(false)
+const adminFormRef = ref(null)
+const adminForm = ref({ adminEmail: '', adminPassword: '' })
 
-const rules = reactive({
-  // 👇 把 userAccount 的校验换成了 usmEmail 专属校验
-  usmEmail: [
-    { required: true, message: 'Please enter your USM email', trigger: 'blur' },
-    { type: 'email', message: 'Please enter a valid email address', trigger: 'blur' },
-    {
-      validator: (rule, value, callback) => {
-        if (value && !value.toLowerCase().endsWith('.usm.my')) {
-          callback(new Error('Please use USM email (@usm.my) to login'))
-        } else {
-          callback()
-        }
-      },
-      trigger: 'blur'
-    }
-  ],
-  userPassword: [
-    { required: true, message: 'Please enter your password', trigger: 'blur' },
-    { min: 8, message: 'Password must be at least 8 characters', trigger: 'blur' }
-  ]
-})
+const rules = {
+  userEmail: [{ required: true, message: 'Account cannot be empty', trigger: 'blur' }],
+  userPassword: [{ required: true, message: 'Password cannot be empty', trigger: 'blur' }]
+}
 
+const adminRules = {
+  adminEmail: [{ required: true, message: 'Admin email required', trigger: 'blur' }],
+  adminPassword: [{ required: true, message: 'Security password required', trigger: 'blur' }]
+}
+
+// 🎓 1. 普通学生登录逻辑
 const handleLogin = async () => {
-  if (!formRef.value) return
-
-  try {
+  if (!loginFormRef.value) return
+  await loginFormRef.value.validate(async (valid) => {
+    if (!valid) return
     loading.value = true
+    try {
+      const res = await myAxios.post('/user/login', {
+        usmEmail: loginForm.value.userEmail,
+        userPassword: loginForm.value.userPassword
+      })
+      const userInfo = res.data || res
+      if (userInfo) {
+        // 🚀 拦截：防止管理员走错门。如果用普通登录框登了管理员号，直接送去后台！
+        if (userInfo.userRole === 1) {
+          ElMessage.success('Welcome back, Administrator!')
+          localStorage.setItem('user', JSON.stringify(userInfo))
+          if (userStore?.setUserInfo) userStore.setUserInfo(userInfo)
+          router.push('/admin/dashboard') // 直飞后台！
+          return
+        }
 
-    // 表单校验
-    await formRef.value.validate()
+        ElMessage.success('Login Successful!')
+        localStorage.setItem('user', JSON.stringify(userInfo))
+        if (userStore?.setUserInfo) userStore.setUserInfo(userInfo)
+        router.push('/') // 普通学生去商城首页
+      }
+    } catch (error) {
+      ElMessage.error(error.message || 'Authentication failed!')
+    } finally {
+      loading.value = false
+    }
+  })
+}
 
-    // 调用 store 登录
-    const userData = await userStore.login(form)
+// 打开管理员验证弹窗
+const openAdminVerify = () => {
+  adminForm.value = { adminEmail: '', adminPassword: '' }
+  adminDialogVisible.value = true
+}
 
-    // 成功 (把备用的 userAccount 换成了 usmEmail)
-    const username = userData.username || userData.usmEmail || userData.name || form.usmEmail
-    ElMessage.success(`Welcome back, ${username}!`)
+// 🛡️ 2. 管理员专属登录逻辑（100% 独立跳级）
+const handleAdminLogin = async () => {
+  if (!adminFormRef.value) return
+  await adminFormRef.value.validate(async (valid) => {
+    if (!valid) return
+    adminLoading.value = true
+    try {
+      const res = await myAxios.post('/user/login', {
+        usmEmail: adminForm.value.adminEmail,
+        userPassword: adminForm.value.adminPassword
+      })
+      const adminInfo = res.data || res
+      
+      if (adminInfo) {
+        // 严格查验身份：只有 userRole == 1 才是真管理员
+        if (adminInfo.userRole === 1 || adminInfo.role === 'admin' || adminInfo.role === 1) {
+          ElMessage.success('Admin Authentication Passed! Redirecting to Core Portal...')
+          localStorage.setItem('user', JSON.stringify(adminInfo))
+          if (userStore?.setUserInfo) userStore.setUserInfo(adminInfo)
+          
+          adminDialogVisible.value = false
+          // 🚀 核心修改：绝对不碰主页，瞬间空降去纯净黑色后台！
+          router.push('/admin/dashboard') 
+        } else {
+          ElMessage.error('Access Denied: Your account does not have admin privileges!')
+        }
+      }
+    } catch (error) {
+      console.error(error)
+      ElMessage.error(error.message || 'Invalid Admin Credentials!')
+    } finally {
+      adminLoading.value = false
+    }
+  })
+}
 
-    // 跳转首页
-    router.push('/')
-  } catch (error) {
-    // 显示后端返回消息或网络错误
-    ElMessage.error(error.message || 'Login failed. Please check your account and password.')
-  } finally {
-    loading.value = false
-  }
+const handleForgotPassword = () => {
+  ElMessage.info('Please contact campus IT support to reset your password.')
 }
 </script>
 
 <style scoped>
-.login-page {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
-
 .login-container {
-  background: white;
-  border-radius: 20px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-  max-width: 1000px;
-  width: 100%;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  min-height: 600px;
-}
-
-.login-left {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 50px 40px;
   display: flex;
-  align-items: center;
   justify-content: center;
-}
-
-.welcome-content h1 {
-  font-size: 32px;
-  font-weight: 700;
-  margin-bottom: 16px;
-  line-height: 1.2;
-}
-
-.welcome-content p {
-  font-size: 16px;
-  margin-bottom: 30px;
-  opacity: 0.9;
-  line-height: 1.5;
-}
-
-.features {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.feature-item {
-  display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 14px;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%); 
 }
 
-.feature-item .el-icon {
-  color: #10b981;
+.login-card {
+  width: 420px;
+  background: white;
+  padding: 40px;
+  border-radius: 16px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
 }
 
-.login-right {
-  padding: 50px 40px;
-  display: flex;
-  align-items: center;
-}
-
-.form-container {
-  width: 100%;
-  max-width: 350px;
-  margin: 0 auto;
-}
-
-.form-header {
+.login-header {
   text-align: center;
   margin-bottom: 30px;
 }
 
-.form-header h2 {
-  font-size: 28px;
+.login-header h2 {
+  font-size: 26px;
+  color: #111827;
+  margin: 0 0 10px 0;
   font-weight: 700;
-  color: #1f2937;
-  margin-bottom: 8px;
 }
 
-.form-header p {
-  color: #6b7280;
+.login-header p {
   font-size: 14px;
+  color: #6b7280;
+  margin: 0;
+  line-height: 1.4;
 }
 
-.form-header a {
-  color: #667eea;
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.form-header a:hover {
-  text-decoration: underline;
-}
-
-.login-form {
-  width: 100%;
-}
-
-.form-item {
+.form-options {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 20px;
 }
 
-.login-btn {
+.w-full {
   width: 100%;
-  height: 48px;
+}
+
+.login-btn {
+  padding: 12px 0;
   font-size: 16px;
   font-weight: 600;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 8px;
+}
+
+.submit-item {
+  margin-top: 10px;
+  margin-bottom: 20px;
+}
+
+.login-footer {
+  text-align: center;
+  font-size: 14px;
+  color: #4b5563;
+  margin-bottom: 20px;
+}
+
+.divider-line {
   border: none;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-  margin-bottom: 25px;
+  border-top: 1px dashed #e5e7eb;
+  margin: 20px 0;
 }
 
-.login-btn:hover {
-  background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+.admin-portal-wrapper {
+  display: flex;
+  justify-content: center;
 }
 
-:deep(.el-input__wrapper) {
-  border-radius: 12px;
-  border: 1px solid #d1d5db;
-  transition: all 0.3s ease;
-  padding: 0 15px;
+.admin-portal-btn {
+  width: 100%;
+  padding: 10px;
+  background-color: #374151; 
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background-color 0.3s;
 }
 
-:deep(.el-input__wrapper:hover) {
-  border-color: #667eea;
-}
-
-:deep(.el-input__wrapper.is-focus) {
-  border-color: #667eea;
-  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
-}
-
-:deep(.el-form-item__error) {
-  font-size: 12px;
+.admin-portal-btn:hover {
+  background-color: #1f2937; 
 }
 </style>

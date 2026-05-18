@@ -27,7 +27,7 @@
               </el-upload>
             </div>
             <h2 class="user-name">{{ userInfo.username || 'User' }}</h2>
-            <p class="user-email">{{ userInfo.usmEmail || userInfo.userAccount || 'user@usm.my' }}</p>
+            <p class="user-email">{{ userInfo.usmEmail || 'user@student.usm.my' }}</p>
             <div class="member-since">
               <el-icon><Calendar /></el-icon>
               Member since {{ formatDate(userInfo.createTime) || '2024' }}
@@ -137,7 +137,7 @@
                   :disabled="true"
               >
                 <template #append>
-                  <el-tag v-if="profileForm.emailVerified === 1" type="success" size="small">
+                  <el-tag v-if="profileForm.emailVerified === 1 || (profileForm.usmEmail && profileForm.usmEmail.toLowerCase().includes('usm.my'))" type="success" size="small">
                     USM Verified
                   </el-tag>
                   <el-tag v-else type="danger" size="small">
@@ -272,7 +272,7 @@
                   <p>
                     This account is
                     <strong>
-                      {{ profileForm.emailVerified === 1 ? 'verified by USM email' : 'not verified' }}
+                      {{ profileForm.emailVerified === 1 || (profileForm.usmEmail && profileForm.usmEmail.toLowerCase().includes('usm.my')) ? 'verified by USM email' : 'not verified' }}
                     </strong>
                   </p>
                 </div>
@@ -302,7 +302,6 @@ const userStore = useUserStore()
 
 const activeTab = ref('profile')
 
-// 🌟 新增：存放动态战绩数据的响应式对象
 const userStats = reactive({
   listed: 0,
   sold: 0
@@ -327,13 +326,11 @@ const userInfo = ref({
   createTime: null
 })
 
-// 🌟 新增：去后台拉取当前用户的商品列表并统计数量
 const loadUserStats = async () => {
   try {
     const res = await myAxios.get('/goods/my/list')
     if (res && Array.isArray(res)) {
       userStats.listed = res.length
-      // 后端状态为 2 通常代表 sold
       userStats.sold = res.filter(item => item.status === 2).length
     }
   } catch (error) {
@@ -604,13 +601,11 @@ const uploadAvatar = async (options) => {
 
 onMounted(async () => {
   await loadUserData()
-  // 🌟 页面加载时拉取战绩数据
   await loadUserStats()
 })
 </script>
 
 <style scoped>
-/* 样式保留不变 */
 .profile-page { max-width: 1200px; margin: 0 auto; padding: 20px; }
 .page-header { text-align: center; margin-bottom: 40px; }
 .page-header h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; color: #1f2937; }

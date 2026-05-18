@@ -16,15 +16,21 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        // 确保 uploadDir 结尾有斜杠，防止路径拼接错误
-        String path = uploadDir.endsWith(File.separator) ? uploadDir : uploadDir + File.separator;
+        // 🚀 终极一击：利用 Java 官方 URI 库自动生成标准 file:/// 路径，跨平台绝不出错
+        File dir = new File(uploadDir);
+        String p = dir.toURI().toString(); 
 
-        // 👇 重点看这里：在括号里加上 "/uploads/**"，让它同时支持两种路径！
+        // 让 /images/** 和 /uploads/** 完美映射
         registry.addResourceHandler("/images/**", "/uploads/**")
-                .addResourceLocations("file:" + path);
+                .addResourceLocations(p);
+        
+        System.out.println("====================================================");
+        System.out.println("🚀 [Campus Swap 静态资源服务器全面接管]");
+        System.out.println("🔊 电脑中真实的图片文件夹位置: " + dir.getAbsolutePath());
+        System.out.println("🔊 强行喂给 Spring 的标准 URI: " + p);
+        System.out.println("====================================================");
     }
 
-    // 建议增加全局 CORS 配置，防止前端访问图片跨域
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
@@ -34,4 +40,4 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .allowedHeaders("*")
                 .exposedHeaders("*");
     }
-}
+}   

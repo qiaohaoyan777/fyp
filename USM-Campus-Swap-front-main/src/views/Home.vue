@@ -98,13 +98,13 @@
                 <span v-if="item.specifics" class="condition-tag specific-tag">{{ item.specifics }}</span>
               </div>
               <span class="campus-tag">
-                <el-icon><Location /></el-icon> {{ item.campus }}
+                <el-icon><Location /></el-icon> {{ item.campus || 'USM Main Campus' }}
               </span>
             </div>
 
             <div class="card-info">
               <div class="price-row">
-                <span class="price"><span class="currency">RM</span> {{ item.price?.toFixed(2) }}</span>
+                <span class="price"><span class="currency">RM</span> {{ item.safePrice.toFixed(2) }}</span>
                 
                 <span class="likes">
                    <el-icon><StarFilled v-if="item.wishlistCount > 0" /><Star v-else /></el-icon> 
@@ -116,7 +116,7 @@
                  <span class="category-badge">{{ item.categoryName }}</span>
               </div>
 
-              <h3 class="title" :title="item.title">{{ item.title }}</h3>
+              <h3 class="title" :title="item.title || item.goodsName">{{ item.title || item.goodsName || 'Untitled Item' }}</h3>
               
               <div class="seller-row">
                 <el-avatar :size="24" :src="item.userAvatar" class="seller-avatar" />
@@ -149,7 +149,8 @@ import { Star, StarFilled, Location, ArrowRight, Check, Search } from '@element-
 import myAxios from '@/plugins/request'
 import { listCategories } from '@/api/category'
 import { useUserStore } from '@/stores/user'
-import { ElMessage } from 'element-plus'
+// 🚀 核心补丁1：这里必须引入 ElMessageBox 才能弹窗！
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const router = useRouter()
 const route = useRoute()
@@ -163,6 +164,38 @@ const total = ref(0)
 const showSplash = ref(true)
 
 const searchKeyword = ref(route.query.keyword || '')
+
+const cleanImgUrl = (url) => {
+  if (!url) return '';
+  if (typeof url === 'string' && url.includes('[')) {
+    try {
+      const parsed = JSON.parse(url);
+      return parsed[0] || ''; 
+    } catch (e) {
+      return url.replace(/[\[\]"']/g, '').split(',')[0].trim();
+    }
+  }
+  return url;
+}
+
+const getSafeImg = (row) => {
+  if (!row) return '';
+  const possibleKeys = ['image', 'images', 'imgUrl', 'imageUrl', 'goodsImage', 'cover', 'coverImage', 'coverUrl', 'picture', 'pic', 'photo'];
+  for (const key of possibleKeys) {
+    if (row[key] && typeof row[key] === 'string' && row[key].length > 10) {
+      return cleanImgUrl(row[key]);
+    }
+  }
+  for (const key in row) {
+    const val = row[key];
+    if (val && typeof val === 'string') {
+      if (val.includes('http') || val.includes('uploads') || val.includes('.jpg') || val.includes('.png')) {
+        return cleanImgUrl(val);
+      }
+    }
+  }
+  return '';
+}
 
 const handleStartExploring = () => {
   if (!userStore.userInfo) {
@@ -220,7 +253,7 @@ const loadProducts = async () => {
       current: queryParams.pageNum,
       size: queryParams.pageSize,
       title: queryParams.keyword, 
-      status: 1 
+      status: 0 
     }
 
     if (queryParams.categoryId) {
@@ -236,38 +269,27 @@ const loadProducts = async () => {
       total.value = res.total || 0
 
       products.value = rawList.map(item => {
-        let cover = 'https://placehold.co/300x300?text=No+Image'
-        if (item.images) {
-          try {
-            const imgArray = JSON.parse(item.images)
-            if (Array.isArray(imgArray) && imgArray.length > 0) {
-              cover = imgArray[0]
-            }
-          } catch (e) {
-            if (item.images.startsWith('http')) {
-              cover = item.images
-            }
-          }
-        }
-        if (item.coverImage) {
-          cover = item.coverImage
-        }
-
-        const conditionMap = { 1: 'New', 2: 'Like New', 3: 'Good', 4: 'Fair' }
-        
-        // 🌟 动态匹配出这个商品的种类名称 (Category Name) 供前台显示
         const matchedCategory = categories.value.find(c => String(c.id) === String(item.categoryId))
         const catName = matchedCategory ? matchedCategory.name : 'General'
 
+        let safeImage = getSafeImg(item);
+        if (!safeImage) safeImage = 'https://placehold.co/300x300?text=No+Image';
+
+        let safeAvatar = cleanImgUrl(item.userAvatar || item.avatarUrl || item.avatar);
+        if (!safeAvatar) safeAvatar = 'https://api.dicebear.com/7.x/micah/svg?seed=' + (item.userName || 'User');
+
+        const conditionMap = { 1: 'New', 2: 'Like New', 3: 'Good', 4: 'Fair' }
+
         return {
           ...item,
-          categoryName: catName, // 🌟 把大类名字加进数据里
+          categoryName: catName, 
           specifics: item.specifics || '', 
-          coverImage: cover,
+          coverImage: safeImage,
           conditionText: conditionMap[item.condition] || 'Good',
-          userAvatar: item.userAvatar || 'https://api.dicebear.com/7.x/micah/svg?seed=' + (item.userName || 'User'),
+          userAvatar: safeAvatar,
           userName: item.userName || 'User',
-          wishlistCount: item.wishlistCount || 0 
+          wishlistCount: item.wishlistCount || 0,
+          safePrice: Number(item.price || item.amount || 0)
         }
       })
     }
@@ -305,8 +327,69 @@ watch(
     }
 )
 
+// ==========================================
+// 🚀 核心补丁2：死神级警告探测器（独立函数）
+// ==========================================
+const checkUserWarning = async (userId) => {
+  try {
+    console.log("🕵️‍♂️ 触发探测，开始向后端索要最新状态，UID:", userId);
+    
+    const res = await myAxios.get('/user/get', { params: { id: userId } });
+    
+    let freshUser = res.data;
+    if (res.code === 0 && res.data) {
+       freshUser = res.data;
+    } else if (res && !res.data) {
+       freshUser = res;
+    }
+
+    console.log("🎯 后端返回的最新用户数据:", freshUser);
+
+    if (freshUser && freshUser.warningMsg && freshUser.warningMsg.trim() !== '') {
+      console.log("💥 警告信触发！准备弹窗！");
+      
+      ElMessageBox.alert(
+        `<div style="color: #ef4444; font-size: 16px; font-weight: bold; padding: 10px 0; line-height: 1.5;">
+          ${freshUser.warningMsg}
+         </div>`,
+        '🚨 Campus Marketplace System Warning',
+        {
+          dangerouslyUseHTMLString: true,
+          confirmButtonText: 'I Understand & Will Comply',
+          type: 'error',
+          showClose: false,
+          callback: async () => {
+            try {
+              // 🚀 终极斩草除根：调用后端的专属清空接口！不需要传参数，后端会自动识别当前登录用户！
+              await myAxios.post('/user/clearWarning');
+              ElMessage.success('Warning acknowledged. Thank you.');
+            } catch(e) {
+              console.error("Failed to clear warning", e);
+            }
+          }
+        }
+      )
+    } else {
+      console.log("✅ 该用户目前没有任何警告信息。");
+    }
+  } catch (error) {
+    console.error("❌ 探测警告失败！请检查后端接口 /user/get:", error);
+  }
+}
+
+// 🚀 核心补丁3：用 watch 蹲点，彻底无视时间差！
+watch(
+  () => userStore.userInfo,
+  (newVal) => {
+    if (newVal && newVal.id) {
+      checkUserWarning(newVal.id);
+    }
+  },
+  { immediate: true } // immediate:true 表示一打开网页立刻扫描！
+);
+
+// 原本的生命周期只负责加载商品
 onMounted(() => {
-  // 注意：需要确保种类加载完了，再去加载商品，这样才能正确匹配到 Category 名字
   loadCategories().then(() => {
     loadProducts()
   })
@@ -314,7 +397,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 🌟 防止遮挡，设置最大宽度 */
 .glass-tags { 
   position: absolute; 
   top: 15px; 
@@ -378,7 +460,6 @@ onMounted(() => {
 .product-card { background: white; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.04); cursor: pointer; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-direction: column; border: 1px solid rgba(226, 232, 240, 0.6); }
 .product-card:hover { transform: translateY(-10px); box-shadow: 0 20px 30px rgba(0,0,0,0.1); }
 
-/* 🌟 图片显示核心：使用 contain 和 padding 让图片完全展现 */
 .card-image-wrapper { position: relative; height: 240px; width: 100%; overflow: hidden; background: #ffffff; border-bottom: 1px solid rgba(226, 232, 240, 0.4); }
 .product-img { width: 100%; height: 100%; object-fit: contain; padding: 15px; box-sizing: border-box; transition: transform 0.6s ease; }
 .product-card:hover .product-img { transform: scale(1.08); }
@@ -392,7 +473,6 @@ onMounted(() => {
 .likes { color: #64748b; font-size: 14px; display: flex; align-items: center; gap: 6px; background: #f1f5f9; padding: 4px 10px; border-radius: 12px; font-weight: 600; }
 .likes .el-icon { color: #f59e0b; }
 
-/* 🌟 商品大类标签的样式 */
 .category-badge-wrapper { margin-bottom: 8px; }
 .category-badge { font-size: 11px; font-weight: 700; color: #4f46e5; background: #e0e7ff; padding: 4px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; display: inline-block; }
 
